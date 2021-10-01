@@ -1,0 +1,5 @@
+include LICENSE
+include src/ckdtree/*.h
+include src/ckdtree/*.cpp
+include src/ckdtree/README
+
