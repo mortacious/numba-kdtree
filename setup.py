@@ -106,7 +106,7 @@ setup(
         "Topic :: Scientific/Engineering",
         "Topic :: Software Development",
     ],
-    python_requires=">=3.7",
+    python_requires=">=3.6",
     cmdclass={'build_ext': build_ext},
     zip_safe=True
 )
