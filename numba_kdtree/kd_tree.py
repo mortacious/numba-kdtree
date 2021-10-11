@@ -355,28 +355,25 @@ def _make_kdtree(data, root_bbox, idx, leafsize=10, balanced=False, compact=Fals
 
 
 # constructor method
-@nb.generated_jit(nogil=True, fastmath=True)
 def KDTree(data: DataArray, leafsize: int = 10, compact: bool = False, balanced: bool = False, root_bbox=None):
     if data.dtype == np.float32:
         conv_dtype = np.float32
     else:
         conv_dtype = np.float64
 
-    def KDTree_Impl(data, leafsize: int = 10, compact: bool = False, balanced: bool = False, root_bbox=None):
-        data = np.ascontiguousarray(data, dtype=conv_dtype)
-        n_data, n_features = data.shape
+    data = np.ascontiguousarray(data).astype(conv_dtype)
+    n_data, n_features = data.shape
 
-        if root_bbox is None:
-            # compute the bounding box
-            mins = np.amin(data, axis=0) if n_data > 0 else np.zeros(n_features, dtype=conv_dtype)
-            maxes = np.amax(data, axis=0) if n_data > 0 else np.zeros(n_features, dtype=conv_dtype)
-            root_bbox = np.vstack((mins, maxes))
-        root_bbox = np.ascontiguousarray(root_bbox, dtype=conv_dtype)
+    if root_bbox is None:
+        # compute the bounding box
+        mins = np.amin(data, axis=0) if n_data > 0 else np.zeros(n_features, dtype=conv_dtype)
+        maxes = np.amax(data, axis=0) if n_data > 0 else np.zeros(n_features, dtype=conv_dtype)
+        root_bbox = np.vstack((mins, maxes))
+    root_bbox = np.ascontiguousarray(root_bbox, dtype=conv_dtype)
 
-        idx = np.arange(n_data, dtype=INT_TYPE)
+    idx = np.arange(n_data, dtype=INT_TYPE)
 
-        kdtree = _make_kdtree(data, root_bbox, idx, leafsize, compact, balanced)
-        return kdtree
-
-    return KDTree_Impl
+    tic = time.time()
+    kdtree = _make_kdtree(data, root_bbox, idx, leafsize, compact, balanced)
+    return kdtree
 
