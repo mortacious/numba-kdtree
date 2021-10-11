@@ -345,10 +345,10 @@ def _ol_query_radius_parallel(self, X, r, p=2.0, eps=0.0, return_sorted=False, r
     return _query_radius_parallel_impl
 
 
-@nb.njit(nogil=True)
+@nb.njit(nogil=True, inline='always')
 def _make_kdtree(data, root_bbox, idx, leafsize=10, balanced=False, compact=False):
     # create the transparent underlying c object by calling the function appropriate to the data dtype
-    ckdtree = np.uint64(0) # leave the c object empty for now
+    ckdtree = np.uint64(0)  # leave the c object empty for now
     kdtree = _KDTree(ckdtree, root_bbox, data, idx)
     kdtree.build_index(leafsize, balanced, compact)
     return kdtree
