@@ -3,8 +3,6 @@
 //
 
 #pragma once
-#ifndef HYPERSPACE_NEARESTNEIGHBOR_PARTIAL_SORT_H
-#define HYPERSPACE_NEARESTNEIGHBOR_PARTIAL_SORT_H
 
 /* Adapted version of the code originally
  * written by @jiefangxuanyan for scikit-learn.
@@ -100,4 +98,3 @@ partition_node_indices(const T   *data,
 
     return 0;
 }
-#endif //HYPERSPACE_NEARESTNEIGHBOR_PARTIAL_SORT_H

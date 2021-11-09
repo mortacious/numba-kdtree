@@ -3,8 +3,6 @@
 //
 
 #pragma once
-#ifndef HYPERSPACE_NEARESTNEIGHBOR_DISTANCE_H
-#define HYPERSPACE_NEARESTNEIGHBOR_DISTANCE_H
 #include "distance_base.h"
 
 template<typename T>
@@ -297,5 +295,3 @@ struct MinkowskiDistP2: NonOptimizedMinkowskiDistP2<T> {
 //typedef BaseMinkowskiDistPinf<BoxDist1D> BoxMinkowskiDistPinf;
 //typedef BaseMinkowskiDistP1<BoxDist1D> BoxMinkowskiDistP1;
 //typedef BaseMinkowskiDistP2<BoxDist1D> BoxMinkowskiDistP2;
-
-#endif //HYPERSPACE_NEARESTNEIGHBOR_DISTANCE_H

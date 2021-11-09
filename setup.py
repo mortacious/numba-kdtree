@@ -4,7 +4,7 @@ from numpy.distutils.misc_util import get_numpy_include_dirs
 from distutils.sysconfig import get_python_inc
 from os.path import join, dirname
 from distutils.sysconfig import customize_compiler
-
+import platform
 
 # standalone import of a module (https://stackoverflow.com/a/58423785)
 def import_module_from_path(path):
@@ -59,7 +59,10 @@ class build_ext(build_ext_orig):
 
     def get_ext_filename(self, ext_name):
         if self._ctypes:
-            return ext_name + '.so'
+            if platform.system() == "Windows":
+                return ext_name + '.lib'
+            else:
+                return ext_name + '.so'
         return super().get_ext_filename(ext_name)
 
 
@@ -68,10 +71,15 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 version = import_module_from_path('numba_kdtree/_version.py').__version__
 
+if platform.system() == "Windows":
+    extra_compile_args = ['/O2', '/DKDTREE_COMPILING=1']
+else:
+    extra_compile_args = ['-fPIC', '-O3', '/DKDTREE_COMPILING=1']
+
 module = CTypesExtension('numba_kdtree._ckdtree',
                    sources=ckdtree_src,
                    include_dirs=inc_dirs,
-                   extra_compile_args=['-fPIC', '-O3'])
+                   extra_compile_args=extra_compile_args)
 
 setup(
     name="numba-kdtree",

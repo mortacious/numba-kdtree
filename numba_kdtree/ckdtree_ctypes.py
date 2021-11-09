@@ -1,10 +1,16 @@
 from ctypes import c_float, c_double, c_ssize_t, c_int, c_bool, c_void_p, POINTER, cdll
 from numba import types
 import pathlib
+import platform
 
 
 # ctypes interface to the c implementation for use in numba
 library_path = pathlib.Path(__file__).parent
+
+if platform.system() == "Windows":
+    library_name = "_ckdtree.lib"
+else:
+    library_name = "_ckdtree.so"
 
 
 class _CKDTree(object):
@@ -18,7 +24,7 @@ c_double_p = POINTER(c_double)
 c_ssize_t_p = POINTER(c_ssize_t)
 
 try:
-    _ckdtreelib = cdll.LoadLibrary(str(library_path / "_ckdtree.so"))
+    _ckdtreelib = cdll.LoadLibrary(str(library_path / library_name))
 except Exception:
     raise ImportError('Cannot load dynamic library.')
 
