@@ -74,7 +74,7 @@ version = import_module_from_path('numba_kdtree/_version.py').__version__
 if platform.system() == "Windows":
     extra_compile_args = ['/O2', '/DKDTREE_COMPILING=1']
 else:
-    extra_compile_args = ['-fPIC', '-O3', '/DKDTREE_COMPILING=1']
+    extra_compile_args = ['-fPIC', '-O3', '-DKDTREE_COMPILING=1']
 
 module = CTypesExtension('numba_kdtree._ckdtree',
                    sources=ckdtree_src,
