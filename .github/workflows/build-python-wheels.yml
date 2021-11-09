@@ -54,7 +54,12 @@ jobs:
           CIBW_SKIP: pp* cp27* *-win32 cp35-win_amd64
         run: |
           python -m cibuildwheel --output-dir dist
-          ls dist
+      - name: Publish wheels to PyPI
+            env:
+              TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
+              TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
+            run: |
+              twine upload dist/*-win*.whl
   
 
 
