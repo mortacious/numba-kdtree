@@ -260,6 +260,3 @@ struct RectRectDistanceTracker {
     };
 
 };
-
-
-#endif
