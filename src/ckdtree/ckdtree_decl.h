@@ -3,8 +3,6 @@
 //
 
 #pragma once
-#ifndef HYPERSPACE_NEARESTNEIGHBOR_CKDTREE_DECL_H
-#define HYPERSPACE_NEARESTNEIGHBOR_CKDTREE_DECL_H
 #include <numpy/npy_common.h>
 #include <vector>
 #include <cmath>
@@ -48,5 +46,3 @@ struct ckdtree {
     ckdtree_intp_t      *raw_indices; // index array into the data values
     ckdtree_intp_t size; // size of the tree
 };
-
-#endif //HYPERSPACE_NEARESTNEIGHBOR_KDTREE_DECL_H

@@ -3,8 +3,6 @@
 //
 
 #pragma once
-#ifndef HYPERSPACE_NEARESTNEIGHBOR_DISTANCE_BASE_H
-#define HYPERSPACE_NEARESTNEIGHBOR_DISTANCE_BASE_H
 #include "ckdtree_decl.h"
 #include "rectangle.h"
 
@@ -250,5 +248,3 @@ struct BaseMinkowskiDistP2 : public BaseMinkowskiDistPp<T, Dist1D> {
         return s * s;
     }
 };
-
-#endif //HYPERSPACE_NEARESTNEIGHBOR_DISTANCE_BASE_H

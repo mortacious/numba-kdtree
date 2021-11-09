@@ -3,11 +3,6 @@
 //
 
 #pragma once
-#ifndef HYPERSPACE_NEARESTNEIGHBOR_RECTANGLE_H
-#define HYPERSPACE_NEARESTNEIGHBOR_RECTANGLE_H
-
-#ifndef CKDTREE_CPP_RECTANGLE
-#define CKDTREE_CPP_RECTANGLE
 
 #include <new>
 #include <typeinfo>
@@ -268,4 +263,3 @@ struct RectRectDistanceTracker {
 
 
 #endif
-#endif //HYPERSPACE_NEARESTNEIGHBOR_RECTANGLE_H
