@@ -46,14 +46,13 @@ jobs:
       - uses: actions/setup-python@v2
         with:
           python-version: 3.8
-      - uses: ilammy/msvc-dev-cmd@v1.2.0
+      - name: Install cibuildwheel
+        run:  python -m pip install --upgrade cibuildwheel
+
       - name: Build windows wheels
         env:
           CIBW_SKIP: pp* cp27* *-win32 cp35-win_amd64
-          CIBW_TEST_REQUIRES: pytest numpy scipy numba
-          CIBW_TEST_COMMAND: pytest {project}/tests
         run: |
-          pip install --upgrade cibuildwheel
           python -m cibuildwheel --output-dir dist
           ls dist
   
