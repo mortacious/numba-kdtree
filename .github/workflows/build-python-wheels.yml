@@ -51,7 +51,7 @@ jobs:
 
       - name: Build windows wheels
         env:
-          CIBW_SKIP: pp* cp27* *-win32 cp35-win_amd64
+          CIBW_BUILD: cp36-win_am64 cp37-win_am64 cp38-win_am64 cp39-win_am64
         run: |
           python -m cibuildwheel --output-dir dist
       - name: Publish wheels to PyPI
