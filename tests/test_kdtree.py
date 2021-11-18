@@ -96,3 +96,13 @@ def test_kdtree_query_radius_parallel(data, kd_tree, scipy_tree):
     for i in range(len(ii)):
         assert np.all(ii[i] == ii_scipy[i]), "Not equal for i={}".format(i)
 
+
+def test_argument_conversion(data, kd_tree):
+    _, ii_test = kd_tree.query(data[0], k=10)
+
+    _, ii = kd_tree.query([data[0]], k=10)
+    assert np.all(ii == ii_test)
+
+    _, ii_test = kd_tree.query(np.array([0,0,0]), k=10)
+    _, ii2 = kd_tree.query([0, 0, 0], k=10)
+    assert np.all(ii2 == ii_test)

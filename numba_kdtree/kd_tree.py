@@ -42,6 +42,31 @@ def arange(length, dtype=INT_TYPE):
     return out
 
 
+@nb.njit(nogil=True, inline='always', debug=DEBUG)
+def _list_to_2d_array(arraylist, dtype):
+    n = len(arraylist)
+    k = arraylist[0].shape[0]
+    array = np.zeros((n, k), dtype)
+    for i in range(n):
+        array[i] = arraylist[i]
+    return array
+
+
+@nb.generated_jit(nopython=True, nogil=True, fastmath=FASTMATH)
+def _convert_to_valid_input(X, n_features, dtype):
+
+    convert_list_to_array = isinstance(X, nb.types.List) and isinstance(X.dtype, nb.types.ArrayCompatible)
+
+    def _convert_impl(X, n_features, dtype):
+        if convert_list_to_array:
+            x_tmp = _list_to_2d_array(X, dtype)
+        else:
+            x_tmp = np.asarray(X, dtype=dtype)
+        return np.ascontiguousarray(x_tmp.reshape(-1, n_features))
+
+    return _convert_impl
+
+
 @structref.register
 class KDTreeType(types.StructRef):
     def preprocess_fields(self, fields):
@@ -84,10 +109,16 @@ class _KDTree(structref.StructRefProxy):
         _KDTree_free(self)
 
     def query(self, X, k=1, p=2.0, eps=0.0, distance_upper_bound=np.inf, n_jobs=1):
-        return _KDTree_query(self, X, k, p, eps, distance_upper_bound, n_jobs)
+        if n_jobs == 1:
+            return _KDTree_query(self, X, k, p, eps, distance_upper_bound)
+        else:
+            return _KDTree_query_parallel(self, X, k, p, eps, distance_upper_bound, n_jobs=n_jobs)
 
     def query_radius(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_length=False, n_jobs=-1):
-        return _KDTree_query_radius(self, X, r, p, eps, return_sorted, return_length, n_jobs)
+        if n_jobs == 1:
+            return _KDTree_query_radius(self, X, r, p, eps, return_sorted, return_length)
+        else:
+            return _KDTree_query_radius_parallel(self, X, r, p, eps, return_sorted, return_length, n_jobs=n_jobs)
 
 
 structref.define_proxy(_KDTree, KDTreeType,
@@ -125,19 +156,23 @@ def _KDTree_free(self):
 
 
 @nb.njit()
-def _KDTree_query(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf, n_jobs=1):
-    if n_jobs == 1:
-        return self.query(X, k=k, p=p, eps=eps, distance_upper_bound=distance_upper_bound)
-    else:
-        return self.query_parallel(X, k=k, p=p, eps=eps, distance_upper_bound=distance_upper_bound, n_jobs=n_jobs)
+def _KDTree_query(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf):
+    return self.query(X, k=k, p=p, eps=eps, distance_upper_bound=distance_upper_bound)
 
 
 @nb.njit()
-def _KDTree_query_radius(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_length=False, n_jobs=1):
-    if n_jobs == 1:
-        return self.query_radius(X, r, p, eps, return_sorted, return_length)
-    else:
-        return self.query_radius_parallel(X, r, p, eps, return_sorted, return_length, n_jobs=n_jobs)
+def _KDTree_query_parallel(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf, n_jobs=-1):
+    return self.query_parallel(X, k=k, p=p, eps=eps, distance_upper_bound=distance_upper_bound, n_jobs=n_jobs)
+
+
+@nb.njit()
+def _KDTree_query_radius(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_length=False):
+    return self.query_radius(X, r, p, eps, return_sorted, return_length)
+
+
+@nb.njit()
+def _KDTree_query_radius_parallel(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_length=False, n_jobs=1):
+    return self.query_radius_parallel(X, r, p, eps, return_sorted, return_length, n_jobs=n_jobs)
 
 
 @overload_method(KDTreeType, "_size")
@@ -191,6 +226,10 @@ def _ol_build_index(self, leafsize, balanced=False, compact=False):
     return _build_index_impl
 
 
+
+
+
+
 @overload_method(KDTreeType, "query", jit_options={"nogil": True, "debug": DEBUG, "fastmath": FASTMATH, 'parallel': False})
 def _ol_query(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf):
     # choose the appropriate methods based on the data type
@@ -205,7 +244,7 @@ def _ol_query(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf):
 
     def _query_impl(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf):
         n_features = self.data.shape[1]
-        xx = np.ascontiguousarray(X.reshape(-1, n_features)).astype(dtype_npy)
+        xx = _convert_to_valid_input(X, n_features, dtype_npy)
         n_queries = xx.shape[0]
         if p < 1:
             raise ValueError("Only p-norms with 1<=p<=infinity permitted")
@@ -239,7 +278,8 @@ def _ol_query_parallel(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf, 
             nb.set_num_threads(n_jobs)
 
         n_features = self.data.shape[1]
-        xx = np.ascontiguousarray(X.reshape(-1, n_features))
+        xx = _convert_to_valid_input(X, n_features, dtype_npy)
+
         n_queries = xx.shape[0]
 
         dd = np.empty((n_queries, k), dtype=dtype_npy)
@@ -273,7 +313,7 @@ def _ol_query_radius(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_len
     # noinspection PyShadowingNames
     def _query_radius_impl(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_length=False):
         n_features = self.data.shape[1]
-        xx = np.ascontiguousarray(X.reshape(-1, n_features)).astype(dtype_npy)  # only one query for now!
+        xx = _convert_to_valid_input(X, n_features, dtype_npy)
         n_queries = xx.shape[0]
 
         if p < 1:
@@ -321,7 +361,7 @@ def _ol_query_radius_parallel(self, X, r, p=2.0, eps=0.0, return_sorted=False, r
             nb.set_num_threads(n_jobs)
 
         n_features = self.data.shape[1]
-        xx = np.ascontiguousarray(X.reshape(-1, n_features)).astype(dtype_npy)  # only one query for now!
+        xx = _convert_to_valid_input(X, n_features, dtype_npy)
         n_queries = xx.shape[0]
 
         if p < 1:
