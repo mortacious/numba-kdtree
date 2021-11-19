@@ -54,8 +54,7 @@ def _list_to_2d_array(arraylist, dtype):
 
 @nb.generated_jit(nopython=True, nogil=True, fastmath=FASTMATH)
 def _convert_to_valid_input(X, n_features, dtype):
-
-    convert_list_to_array = isinstance(X, nb.types.List) and isinstance(X.dtype, nb.types.ArrayCompatible)
+    convert_list_to_array = isinstance(X, (nb.types.ListType, nb.types.List)) and isinstance(X.dtype, nb.types.ArrayCompatible)
 
     def _convert_impl(X, n_features, dtype):
         if convert_list_to_array:

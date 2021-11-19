@@ -3,6 +3,7 @@ from timeit import default_timer as timer
 from numba_kdtree import KDTree
 import numpy as np
 from scipy.spatial import cKDTree
+import numba as nb
 
 
 @pytest.fixture(scope='module')
@@ -101,6 +102,9 @@ def test_argument_conversion(data, kd_tree):
     _, ii_test = kd_tree.query(data[0], k=10)
 
     _, ii = kd_tree.query([data[0]], k=10)
+    assert np.all(ii == ii_test)
+
+    _, ii = kd_tree.query(nb.typed.List([data[0]]), k=10)
     assert np.all(ii == ii_test)
 
     _, ii_test = kd_tree.query(np.array([0,0,0]), k=10)
