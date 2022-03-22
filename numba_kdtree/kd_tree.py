@@ -61,7 +61,7 @@ def _convert_to_valid_input(X, n_features, dtype):
             x_tmp = _list_to_2d_array(X, dtype)
         else:
             x_tmp = np.asarray(X, dtype=dtype)
-        return np.ascontiguousarray(x_tmp.reshape(-1, n_features))
+        return np.ascontiguousarray(x_tmp).reshape(-1, n_features)
 
     return _convert_impl
 
