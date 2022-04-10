@@ -81,7 +81,6 @@ class _KDTree(structref.StructRefProxy):
                                                 root_bbox,
                                                 data,
                                                 idx)
-
     @property
     def root_bbox(self):
         return _KDTree_get_root_bbox(self)
@@ -102,7 +101,12 @@ class _KDTree(structref.StructRefProxy):
         return _KDTree_built(self)
 
     def __del__(self):
-        _KDTree_free(self)
+        try:
+            self.free_index()
+        except ModuleNotFoundError:
+            # HACK: we are in the process of shutting down the interpreter so calling the external c function
+            # might not be possible any more. For now just ignore this
+            pass
 
     def free_index(self):
         _KDTree_free(self)
@@ -193,11 +197,11 @@ def _ol_free_index(self):
     dtype = self.field_dict['data'].dtype
     if dtype != nb.types.float32:
         dtype = nb.types.float64
-
     func_free = ckdtree_ct.free[dtype]
 
     def _free_index_impl(self):
         func_free(self.ckdtree)
+        self.ckdtree = 0
 
     return _free_index_impl
 
@@ -223,10 +227,6 @@ def _ol_build_index(self, leafsize, balanced=False, compact=False):
         func_build(self.ckdtree, 0, n_data, self.root_bbox[0].ctypes, self.root_bbox[1].ctypes, balanced_, compact_)
 
     return _build_index_impl
-
-
-
-
 
 
 @overload_method(KDTreeType, "query", jit_options={"nogil": True, "debug": DEBUG, "fastmath": FASTMATH, 'parallel': False})
@@ -387,7 +387,7 @@ def _ol_query_radius_parallel(self, X, r, p=2.0, eps=0.0, return_sorted=False, r
 @nb.njit(nogil=True)
 def _make_kdtree(data, root_bbox, idx, leafsize=10, balanced=False, compact=False):
     # create the transparent underlying c object by calling the function appropriate to the data dtype
-    ckdtree = np.uint64(0) # leave the c object empty for now
+    ckdtree = np.uint64(0)  # leave the c object empty for now
     kdtree = _KDTree(ckdtree, root_bbox, data, idx)
     kdtree.build_index(leafsize, balanced, compact)
     return kdtree
@@ -412,7 +412,6 @@ def KDTree(data: DataArray, leafsize: int = 10, compact: bool = False, balanced:
 
     idx = np.arange(n_data, dtype=INT_TYPE)
 
-    tic = time.time()
     kdtree = _make_kdtree(data, root_bbox, idx, leafsize, compact, balanced)
     return kdtree
 

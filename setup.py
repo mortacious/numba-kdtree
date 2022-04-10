@@ -96,7 +96,7 @@ setup(
     packages=find_packages(exclude=['examples', 'tests']),
     ext_modules=[module],
     install_requires=[
-        'numpy<=1.20',
+        'numpy',
         'numba>=0.52',
     ],
     extras_require={

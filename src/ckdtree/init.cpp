@@ -32,17 +32,21 @@ ckdtree_double* ckdtree_init_double(double* data, ckdtree_intp_t* indices, ckdtr
 }
 
 void ckdtree_free_float(ckdtree_float* self) {
-    //printf("free c data\n");
+    //printf("free c data float\n");
     //auto self_t = (ckdtree<float>*) self;
-    delete self;
+    if(self != nullptr) {
+        delete self;
+    }
     self = nullptr;
 }
 
 void ckdtree_free_double(ckdtree_double* self) {
-    //printf("free c data\n");
+    //printf("free c data double\n");
     //auto self_t = (ckdtree<double>*) self;
     //delete self_t->tree_buffer;
-    delete self;
+    if(self != nullptr) {
+        delete self;
+    }
     self = nullptr;
 }
 
