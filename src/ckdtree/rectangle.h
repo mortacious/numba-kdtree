@@ -135,7 +135,7 @@ struct RectRectDistanceTracker {
         /* internally we represent all distances as distance ** p */
         if (CKDTREE_LIKELY(p == 2.0))
             upper_bound = _upper_bound * _upper_bound;
-        else if ((!std::isinf(p)) && (!isinf(_upper_bound)))
+        else if ((!std::isinf(p)) && (!std::isinf(_upper_bound)))
             upper_bound = std::pow(_upper_bound,p);
         else
             upper_bound = _upper_bound;

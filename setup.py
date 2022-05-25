@@ -1,6 +1,5 @@
 from setuptools import setup, find_packages, Extension
 from distutils.command.build_ext import build_ext as build_ext_orig
-from numpy.distutils.misc_util import get_numpy_include_dirs
 from distutils.sysconfig import get_python_inc
 from os.path import join, dirname
 from distutils.sysconfig import customize_compiler
@@ -27,7 +26,6 @@ def import_module_from_path(path):
     return module
 
 inc_dirs = [get_python_inc()]
-inc_dirs.extend(get_numpy_include_dirs())
 inc_dirs.append(join(dirname(dirname(__file__)), 'src', 'ckdtree'))
 
 ckdtree_src = ['init.cpp',
@@ -96,7 +94,6 @@ setup(
     packages=find_packages(exclude=['examples', 'tests']),
     ext_modules=[module],
     install_requires=[
-        'numpy',
         'numba>=0.52',
     ],
     extras_require={
