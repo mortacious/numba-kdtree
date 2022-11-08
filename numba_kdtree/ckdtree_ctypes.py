@@ -80,6 +80,7 @@ _ckdtreelib.ckdtree_query_knn_{c_type}.restype  = c_int
 _ckdtreelib.ckdtree_query_knn_{c_type}.argtypes = (c_void_p,
                                                    c_{c_type}_p,
                                                    c_ssize_t_p,
+                                                   c_ssize_t_p,
                                                    c_{c_type}_p,
                                                    c_ssize_t,
                                                    c_ssize_t,

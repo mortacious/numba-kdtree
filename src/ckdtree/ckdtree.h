@@ -60,11 +60,11 @@ KDTREE_PUBLIC ssize_t ckdtree_size_float(ckdtree_float* self);
 KDTREE_PUBLIC ssize_t ckdtree_size_double(ckdtree_double* self);
 
 KDTREE_PUBLIC int
-ckdtree_query_knn_float(ckdtree_float* self, float *dd, ckdtree_intp_t *ii, float *xx, ckdtree_intp_t n, ckdtree_intp_t k,
+ckdtree_query_knn_float(ckdtree_float* self, float *dd, ckdtree_intp_t *ii, ckdtree_intp_t *nn, float *xx, ckdtree_intp_t n, ckdtree_intp_t k,
                         double eps, double p, float distance_upper_bound);
 
 KDTREE_PUBLIC int
-ckdtree_query_knn_double(ckdtree_double* self, double *dd, ckdtree_intp_t *ii, double *xx, ckdtree_intp_t n,
+ckdtree_query_knn_double(ckdtree_double* self, double *dd, ckdtree_intp_t *ii, ckdtree_intp_t *nn, double *xx, ckdtree_intp_t n,
                          ckdtree_intp_t k, double eps, double p, double distance_upper_bound);
 
 typedef struct std::vector<ckdtree_intp_t> radius_result_set;
