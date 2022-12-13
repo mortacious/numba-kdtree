@@ -97,7 +97,7 @@ setup(
         'numba>=0.52',
     ],
     extras_require={
-        'tests': ['pytest', 'scipy'],
+        'tests': ['pytest', 'scipy', 'requests', 'plyfile'],
     },
     license="MIT",
     classifiers=[
