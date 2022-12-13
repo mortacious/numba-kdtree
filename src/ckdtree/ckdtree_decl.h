@@ -31,6 +31,12 @@
     #endif
 #endif
 
+// define the ssize_t type for windows systems
+#if defined(_MSC_VER)
+#include <BaseTsd.h>
+typedef SSIZE_T ssize_t;
+#endif
+
 
 #define ckdtree_intp_t ssize_t
 
