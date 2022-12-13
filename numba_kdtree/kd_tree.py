@@ -250,10 +250,12 @@ def _ol_query(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf):
 
         dd = np.empty((n_queries, k), dtype=dtype_npy)
         ii = np.full((n_queries, k), fill_value=-1, dtype=INT_TYPE)
+        nn = np.empty((n_queries,), dtype=INT_TYPE)
+
         for i in range(n_queries):
-            func_query_knn(self.ckdtree, dd[i].ctypes, ii[i].ctypes,
-                      xx[i].ctypes, 1, k, eps, p, distance_upper_bound)
-        return dd, ii
+            func_query_knn(self.ckdtree, dd[i].ctypes, ii[i].ctypes, nn[i:i+1].ctypes,
+                           xx[i].ctypes, 1, k, eps, p, distance_upper_bound)
+        return dd, ii, nn
 
     return _query_impl
 
@@ -283,12 +285,13 @@ def _ol_query_parallel(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf, 
 
         dd = np.empty((n_queries, k), dtype=dtype_npy)
         ii = np.full((n_queries, k), fill_value=-1, dtype=INT_TYPE)
+        nn = np.empty((n_queries,), dtype=INT_TYPE)
 
         for i in nb.prange(n_queries):
-            func_query_knn(self.ckdtree, dd[i].ctypes, ii[i].ctypes,
-                      xx[i].ctypes, 1, k, eps, p, distance_upper_bound)
+            func_query_knn(self.ckdtree, dd[i].ctypes, ii[i].ctypes, nn[i:i+1].ctypes,
+                           xx[i].ctypes, 1, k, eps, p, distance_upper_bound)
         nb.set_num_threads(numba_threads_prev)
-        return dd, ii
+        return dd, ii, nn
 
     return _query_parallel_impl
 

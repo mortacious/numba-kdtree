@@ -187,6 +187,7 @@ static void
 query_single_point(const ckdtree<T> *self,
                    T   *result_distances,
                    ckdtree_intp_t      *result_indices,
+                   ckdtree_intp_t      *result_n,
                    const T  *x,
                    const ckdtree_intp_t     k,
                    const double  eps,
@@ -391,6 +392,8 @@ query_single_point(const ckdtree<T> *self,
     }
     /* heapsort */
     std::vector<heapitem> sorted_neighbors(k);
+
+    result_n[0] = neighbors.n; // save the number of neighbors as well
     for(i = neighbors.n - 1; i >=0; --i) {
         auto neighbor = neighbors.pop();
         result_indices[i] = neighbor.contents.intdata;
@@ -409,6 +412,7 @@ int
 query_knn(const ckdtree<T>      *self,
           T        *dd,
           ckdtree_intp_t           *ii,
+          ckdtree_intp_t           *nn,
           const T  *xx,
           const ckdtree_intp_t     n,
           const ckdtree_intp_t     k,
@@ -418,7 +422,7 @@ query_knn(const ckdtree<T>      *self,
 {
 #define HANDLE(cond, t, kls) \
     if(cond) { \
-        query_single_point<t, kls>(self, dd_row, ii_row, xx_row, k, eps, p, distance_upper_bound); \
+        query_single_point<t, kls>(self, dd_row, ii_row, nn_row, xx_row, k, eps, p, distance_upper_bound); \
     } else
 
     ckdtree_intp_t m = self->m;
@@ -426,6 +430,7 @@ query_knn(const ckdtree<T>      *self,
     for (i=0; i<n; ++i) {
         T *dd_row = dd + (i*k);
         ckdtree_intp_t *ii_row = ii + (i*k);
+        ckdtree_intp_t *nn_row = nn + i;
         const T *xx_row = xx + (i*m);
         HANDLE(CKDTREE_LIKELY(p == 2), T, MinkowskiDistP2<T>)
         HANDLE(p == 1, T, MinkowskiDistP1<T>)
@@ -438,16 +443,16 @@ query_knn(const ckdtree<T>      *self,
 
 /* C Interface functions */
 int
-ckdtree_query_knn_float(ckdtree_float* self, float *dd, ckdtree_intp_t *ii, float *xx, ckdtree_intp_t n, ckdtree_intp_t k,
+ckdtree_query_knn_float(ckdtree_float* self, float *dd, ckdtree_intp_t *ii, ckdtree_intp_t *nn, float *xx, ckdtree_intp_t n, ckdtree_intp_t k,
                         double eps, double p, float distance_upper_bound) {
     //auto self = (ckdtree<float>*) self_; // cast the void pointer
-    return query_knn<float>(self, dd, ii, xx, n, k, eps, p, distance_upper_bound);
+    return query_knn<float>(self, dd, ii, nn, xx, n, k, eps, p, distance_upper_bound);
 }
 
 int
-ckdtree_query_knn_double(ckdtree_double* self, double *dd, ckdtree_intp_t *ii, double *xx, ckdtree_intp_t n,
+ckdtree_query_knn_double(ckdtree_double* self, double *dd, ckdtree_intp_t *ii, ckdtree_intp_t *nn, double *xx, ckdtree_intp_t n,
                          ckdtree_intp_t k, double eps, double p, double distance_upper_bound) {
     //auto self = (ckdtree<double>*) self_; // cast the void pointer
-    return query_knn<double>(self, dd, ii, xx, n, k, eps, p, distance_upper_bound);
+    return query_knn<double>(self, dd, ii, nn, xx, n, k, eps, p, distance_upper_bound);
 
 }
