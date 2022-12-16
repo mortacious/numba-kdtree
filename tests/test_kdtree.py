@@ -68,7 +68,7 @@ def test_kdtree_query(data, kdtree, scipy_kdtree):
     assert np.allclose(dd, dd_scipy)
 
     num_executions = 5
-    k_benchmark = 100
+    k_benchmark = 30
     runtime_kdtree_query = timeit(lambda: kdtree.query(data, k=k_benchmark),
                               number=num_executions) / num_executions
     runtime_scipy_query = timeit(lambda: scipy_kdtree.query(data, k=k_benchmark, workers=1),
@@ -89,7 +89,7 @@ def test_kdtree_query_parallel(data, kdtree, scipy_kdtree):
     assert np.allclose(dd, dd_scipy)
 
     num_executions = 5
-    k_benchmark = 100
+    k_benchmark = 30
     runtime_kdtree_query = timeit(lambda: kdtree.query(data, k=k_benchmark, workers=-1),
                               number=num_executions) / num_executions
     runtime_scipy_query = timeit(lambda: scipy_kdtree.query(data, k=k_benchmark, workers=-1),
@@ -100,7 +100,7 @@ def test_kdtree_query_parallel(data, kdtree, scipy_kdtree):
 
 def test_kdtree_query_max_radius(data, kdtree, scipy_kdtree):
     k = 100
-    upper_bound = 0.0005
+    upper_bound = 0.002
 
     dd, ii, nn = kdtree.query(data[:1], k=k, distance_upper_bound=upper_bound)  # pre-compile
 
@@ -199,7 +199,7 @@ def test_use_in_numba_function(data, kdtree):
     dd, ii, nn = kdtree.query(data[:1], k=10)  # pre-compile
 
     num_executions = 5
-    k_benchmark = 100
+    k_benchmark = 30
 
     # run times should be very similar here
     runtime_kdtree_query = timeit(lambda: kdtree.query(data, k=k_benchmark),
@@ -224,7 +224,7 @@ def test_use_in_numba_function_parallel(data, kdtree):
     dd, ii, nn = kdtree.query(data[:1], k=10, workers=-1)  # pre-compile
 
     num_executions = 5
-    k_benchmark = 100
+    k_benchmark = 30
 
     # run times should be very similar here
     runtime_kdtree_query = timeit(lambda: kdtree.query(data, k=k_benchmark, workers=-1),
