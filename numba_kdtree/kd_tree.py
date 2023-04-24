@@ -417,3 +417,44 @@ def KDTree(data: DataArray, leafsize: int = 10, compact: bool = False, balanced:
     kdtree = _make_kdtree(data, root_bbox, idx, leafsize, compact, balanced)
     return kdtree
 
+
+# constructor method
+@nb.extending.overload(KDTree, jit_options={'nogil': True, 'fastmath': True})
+def KDTree_numba(data, leafsize: int = 10, compact: bool = False, balanced: bool = False, root_bbox=None):
+    if data.dtype == nb.types.float32:
+        conv_dtype = nb.types.float32
+        finfo = np.finfo(np.float32)
+
+    else:
+        conv_dtype = nb.types.float64
+        finfo = np.finfo(np.float64)
+
+    cmax = finfo.max
+    cmin = finfo.min
+
+    def KDTree_impl(data, leafsize=10, compact=False, balanced=False, root_bbox=None):
+        data = np.ascontiguousarray(data).astype(conv_dtype)
+        n_data, n_features = data.shape
+
+        if root_bbox is None:
+            root_bbox = np.empty((2, 3), dtype=data.dtype)
+            root_bbox[0] = cmax
+            root_bbox[1] = cmin
+
+            for i in range(data.shape[0]):
+                for j in range(data.shape[1]):
+                    if data[i, j] < root_bbox[0, j]:
+                        root_bbox[0, j] = data[i, j]
+                    if data[i, j] > root_bbox[1, j]:
+                        root_bbox[1, j] = data[i, j]
+            # compute the bounding box
+        root_bbox = np.ascontiguousarray(root_bbox).astype(conv_dtype)
+
+        idx = np.arange(n_data, dtype=INT_TYPE)
+
+        kdtree = _make_kdtree(data, root_bbox, idx, leafsize, compact, balanced)
+
+        return kdtree
+
+    return KDTree_impl
+
