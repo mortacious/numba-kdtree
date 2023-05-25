@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstring>
 #include <vector>
+#include <cstdint>
 #include "ckdtree_decl.h"
 
 /* Interval arithmetic
