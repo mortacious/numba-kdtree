@@ -5,6 +5,7 @@ from numba.core import types
 from numba.experimental import structref
 from numba.extending import overload_method
 from .ckdtree_ctypes import ckdtree as ckdtree_ct
+import warnings
 
 
 __all__ = ["KDTree"]
@@ -223,6 +224,9 @@ def _ol_query(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf, workers=N
 
     func_query_knn = ckdtree_ct.query_knn[dtype]
 
+    # suppress the performance warning here as the non-parallel function will be compiled with parallel=True
+    warnings.simplefilter('ignore', category=nb.errors.NumbaPerformanceWarning)
+
     # strangely we have to check for all cases of None here...
     if workers is None or workers is nb.types.none or isinstance(workers, nb.types.Omitted):
         # single threaded case: ignore the number of workers and just operate sequentially
@@ -272,7 +276,7 @@ def _ol_query(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf, workers=N
         return _query_parallel_impl
 
 
-@overload_method(KDTreeType, "query_radius", jit_options={"nogil": True, "debug": DEBUG, "fastmath": FASTMATH, 'parallel': False})
+@overload_method(KDTreeType, "query_radius", jit_options={"nogil": True, "debug": DEBUG, "fastmath": FASTMATH, 'parallel': True})
 def _ol_query_radius(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_length=False, workers=None):
     # choose the appropriate methods based on the data type
     dtype = self.field_dict['data'].dtype
@@ -287,6 +291,9 @@ def _ol_query_radius(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_len
     radius_result_set_copy_and_free = ckdtree_ct.radius_result_set_copy_and_free
 
     result_array_type = types.int64[:]
+
+    # suppress the performance warning here as the non-parallel function will be compiled with parallel=True
+    warnings.simplefilter('ignore', category=nb.errors.NumbaPerformanceWarning)
 
     # strangely we have to check for all cases of None here...
     if workers is None or workers is nb.types.none or isinstance(workers, nb.types.Omitted):

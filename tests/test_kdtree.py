@@ -168,12 +168,14 @@ def test_kdtree_query_radius_parallel(data, kdtree, scipy_kdtree):
 
 
 def test_argument_conversion(data, kdtree):
+    import warnings
     # conversion of scalar arguments
     _, ii_test, _ = kdtree.query(data[0], k=10)
-
-    # conversion of lists
-    _, ii, _ = kdtree.query([data[0]], k=10)
-    assert np.all(ii == ii_test)
+    with warnings.catch_warnings():
+        # conversion of lists (this is deprecated but should still work as long as the typed list is not the default yet)
+        warnings.simplefilter("ignore", nb.errors.NumbaPendingDeprecationWarning)
+        _, ii, _ = kdtree.query([data[0]], k=10)
+        assert np.all(ii == ii_test)
 
     # conversion of numba lists
     _, ii, _ = kdtree.query(nb.typed.List([data[0]]), k=10)
@@ -181,7 +183,10 @@ def test_argument_conversion(data, kdtree):
 
     # conversion of manually specified arrays
     _, ii_test, _ = kdtree.query(np.array([0, 0, 0]), k=10)
-    _, ii2, _ = kdtree.query([0, 0, 0], k=10)
+    with warnings.catch_warnings():
+        # conversion of lists (this is deprecated but should still work as long as the typed list is not the default yet)
+        warnings.simplefilter("ignore", nb.errors.NumbaPendingDeprecationWarning)
+        _, ii2, _ = kdtree.query([0, 0, 0], k=10)
     assert np.all(ii2 == ii_test)
 
 
