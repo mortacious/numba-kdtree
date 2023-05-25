@@ -73,6 +73,8 @@ if platform.system() == "Windows":
     extra_compile_args = ['/O2', '/DKDTREE_COMPILING=1']
 else:
     extra_compile_args = ['-fPIC', '-O3', '-DKDTREE_COMPILING=1']
+    if platform.system() == "Darwin":
+        extra_compile_args.append('-std=c++11')
 
 module = CTypesExtension('numba_kdtree._ckdtree',
                    sources=ckdtree_src,
