@@ -67,7 +67,7 @@ class build_ext(build_ext_orig):
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
-version = import_module_from_path('numba_kdtree/_version.py').__version__
+#version = import_module_from_path('numba_kdtree/_version.py').__version__
 
 if platform.system() == "Windows":
     extra_compile_args = ['/O2', '/DKDTREE_COMPILING=1']
@@ -83,7 +83,6 @@ module = CTypesExtension('numba_kdtree._ckdtree',
 
 setup(
     name="numba-kdtree",
-    version=version,
     author="Felix Igelbrink",
     author_email="felix.igelbrink@uni-osnabrueck.de",
     description="A kdtree implementation for numba.",
@@ -117,5 +116,10 @@ setup(
     ],
     python_requires=">=3.7",
     cmdclass={'build_ext': build_ext},
-    zip_safe=True
+    zip_safe=True,
+    setup_requires=['setuptools_scm'],
+    use_scm_version = {
+        "write_to": "numba_kdtree/_version.py",
+        "version_scheme": "release-branch-semver"
+    },
 )
