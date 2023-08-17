@@ -254,3 +254,23 @@ def test_construct_in_numba_function(data):
 
     print("\nbuild time:\nnumba:",
           runtime_kdtree_numba, "\npython:", runtime_kdtree_python)
+
+
+def test_pickle(data, kdtree):
+    import pickle
+
+    # pass the tree through pickle
+    serialized_tree = pickle.dumps(kdtree)
+
+    restored_kdtree = pickle.loads(serialized_tree)
+
+    k = 10
+    # query the old tree
+    dd, ii, nn = kdtree.query(data[:100], k=k, workers=-1)
+
+    # query the new tree
+    dd_r, ii_r, nn_r = restored_kdtree.query(data[:100], k=k, workers=-1)
+
+    assert np.allclose(dd, dd_r)
+    assert np.all(ii == ii_r)
+    assert np.all(nn == nn_r)

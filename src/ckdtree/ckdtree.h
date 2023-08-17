@@ -36,11 +36,15 @@ typedef struct ckdtree<float> ckdtree_float;
 typedef struct ckdtree<double> ckdtree_double;
 
 /* Init and Free methods in C */
-KDTREE_PUBLIC ckdtree_float* ckdtree_init_float(float* data, ckdtree_intp_t* indices, ckdtree_intp_t n, ckdtree_intp_t m,
-                             ckdtree_intp_t leafsize, float *maxes, float *mins);
+KDTREE_PUBLIC ckdtree_float* ckdtree_init_float(char* tree_buffer, ckdtree_intp_t buffer_size, 
+                                  float* data, ckdtree_intp_t* indices, 
+                                  ckdtree_intp_t n, ckdtree_intp_t m,
+                                  ckdtree_intp_t leafsize, float *mins, float *maxes);
 
-KDTREE_PUBLIC ckdtree_double* ckdtree_init_double(double* data, ckdtree_intp_t* indices, ckdtree_intp_t n, ckdtree_intp_t m,
-                              ckdtree_intp_t leafsize, double *maxes, double *mins);
+KDTREE_PUBLIC ckdtree_double* ckdtree_init_double(char* tree_buffer, ckdtree_intp_t buffer_size, 
+                                    double* data, ckdtree_intp_t* indices, 
+                                    ckdtree_intp_t n, ckdtree_intp_t m,
+                                    ckdtree_intp_t leafsize, double *mins, double *maxes);
 
 KDTREE_PUBLIC void ckdtree_free_float(ckdtree_float* self);
 
@@ -80,6 +84,17 @@ ckdtree_query_radius_double(ckdtree_double* self, double *x, ckdtree_intp_t n_qu
 KDTREE_PUBLIC ckdtree_intp_t radius_result_set_get_size(radius_result_set* result_set);
 
 KDTREE_PUBLIC void radius_result_set_copy_and_free(radius_result_set* result_set, ckdtree_intp_t* result);
+
+
+KDTREE_PUBLIC ckdtree_intp_t leafsize_float(ckdtree_float* self);
+KDTREE_PUBLIC ckdtree_intp_t leafsize_double(ckdtree_double* self);
+
+KDTREE_PUBLIC ckdtree_intp_t nodesize_float(ckdtree_float* self);
+KDTREE_PUBLIC ckdtree_intp_t nodesize_double(ckdtree_double* self);
+
+KDTREE_PUBLIC ckdtree_intp_t copy_tree_float(ckdtree_float* self, char* buffer);
+KDTREE_PUBLIC ckdtree_intp_t copy_tree_double(ckdtree_double* self, char* buffer);
+
 
 #ifdef __cplusplus
 }

@@ -96,6 +96,10 @@ class _KDTree(structref.StructRefProxy):
     @property
     def size(self):
         return _KDTree_get_size(self)
+    
+    @property
+    def leafsize(self):
+        return _KDTree_get_leafsize(self)
 
     def built(self):
         return _KDTree_built(self)
@@ -107,6 +111,12 @@ class _KDTree(structref.StructRefProxy):
             # HACK: we are in the process of shutting down the interpreter so calling the external c function
             # might not be possible any more. For now just ignore this
             pass
+
+    def __reduce__(self):
+        """Pickle support
+        """
+        args = _KDTree_reduce_args(self)
+        return _restore_kdtree, args
 
     def free_index(self):
         _KDTree_free(self)
@@ -140,6 +150,13 @@ def _KDTree_get_idx(self):
 def _KDTree_get_size(self):
     return self._size()
 
+@nb.njit()
+def _KDTree_get_leafsize(self):
+    return self._leafsize()
+
+@nb.njit()
+def _KDTree_reduce_args(self):
+    return self._reduce_args()
 
 @nb.njit()
 def _KDTree_built(self):
@@ -175,6 +192,22 @@ def _ol_size(self):
     return _size_impl
 
 
+@overload_method(KDTreeType, "_leafsize")
+def _ol_leafsize(self):
+    """Returns the leaf size of the underlying tree
+    """
+    dtype = self.field_dict['data'].dtype
+    if dtype != nb.types.float32:
+        dtype = nb.types.float64
+
+    func_leafsize = ckdtree_ct.leafsize[dtype]
+
+    def _leafsize_impl(self):
+        return func_leafsize(self.ckdtree)
+
+    return _leafsize_impl
+
+
 @overload_method(KDTreeType, "free_index")
 def _ol_free_index(self):
     dtype = self.field_dict['data'].dtype
@@ -187,6 +220,30 @@ def _ol_free_index(self):
         self.ckdtree = 0
 
     return _free_index_impl
+
+@overload_method(KDTreeType, "_reduce_args")
+def _ol_reduce_args(self):
+    dtype = self.field_dict['data'].dtype
+    if dtype != nb.types.float32:
+        dtype = nb.types.float64
+
+    # functions to retrieve the parameters of the tree
+    func_leafsize = ckdtree_ct.leafsize[dtype]
+    func_size = ckdtree_ct.size[dtype]
+    func_nodesize = ckdtree_ct.nodesize[dtype]
+    func_copy_tree = ckdtree_ct.copy_tree[dtype]
+
+    def _reduce_args_impl(self):
+        leafsize = func_leafsize(self.ckdtree)
+        size_bytes = func_size(self.ckdtree) * func_nodesize(self.ckdtree)
+        # copy the tree into a fresh buffer
+        tree_buffer = np.empty(size_bytes, dtype=np.uint8)
+        size_copied = func_copy_tree(self.ckdtree, tree_buffer.ctypes)
+        if size_copied != size_bytes:
+            raise ValueError("__getstate__ failed.")
+        return (tree_buffer, self.data, self.root_bbox, leafsize, self.idx)
+    
+    return _reduce_args_impl
 
 
 @overload_method(KDTreeType, "build_index", jit_options={"nogil": True, "debug": DEBUG, "fastmath": FASTMATH})
@@ -204,7 +261,7 @@ def _ol_build_index(self, leafsize, balanced=False, compact=False):
         n_data, n_features = self.data.shape
         if self.ckdtree != 0:
             func_free(self.ckdtree)
-        self.ckdtree = func_init(self.data.ctypes, self.idx.ctypes, n_data, n_features, leafsize, self.root_bbox[0].ctypes, self.root_bbox[1].ctypes)
+        self.ckdtree = func_init(0, 0, self.data.ctypes, self.idx.ctypes, n_data, n_features, leafsize, self.root_bbox[0].ctypes, self.root_bbox[1].ctypes)
         compact_ = 1 if compact else 0
         balanced_ = 1 if balanced else 0
         func_build(self.ckdtree, 0, n_data, self.root_bbox[0].ctypes, self.root_bbox[1].ctypes, balanced_, compact_)
@@ -366,6 +423,36 @@ def _make_kdtree(data, root_bbox, idx, leafsize=10, balanced=False, compact=Fals
     kdtree.build_index(leafsize, balanced, compact)
     return kdtree
 
+def _restore_kdtree_impl(tree_buffer, data, root_bbox, leafsize, indices):
+    # this is a stub for numba overload
+    pass
+
+@nb.extending.overload(_restore_kdtree_impl, jit_options={'nogil': True, 'fastmath': True})
+def _ol_restore_kdtree_impl(tree_buffer, data, root_bbox, leafsize, indices):
+    dtype = data.dtype
+    if dtype == nb.types.float32:
+        dtype_npy = np.float32
+    else:
+        dtype = nb.types.float64
+        dtype_npy = np.float64
+
+    func_init = ckdtree_ct.init[dtype]
+
+    def _restore_kdtree_impl_impl(tree_buffer, data, root_bbox, leafsize, indices):
+        data_conv = data.astype(dtype_npy) # is this really needed?
+        n_data, n_features = data.shape
+        ckdtree = np.uint64(0)  # leave the c object empty for now
+        kdtree = _KDTree(ckdtree, root_bbox, data_conv, indices)
+        # call init with the existing tree
+        kdtree.ckdtree = func_init(tree_buffer.ctypes, tree_buffer.size, data_conv.ctypes, indices.ctypes, n_data, n_features, leafsize, root_bbox[0].ctypes, root_bbox[1].ctypes)
+        return kdtree
+
+    return _restore_kdtree_impl_impl
+
+# wrapper function to call the overloaded function above
+@nb.njit()
+def _restore_kdtree(tree_buffer, data, root_bbox, leafsize, indices):
+    return _restore_kdtree_impl(tree_buffer, data, root_bbox, leafsize, indices)
 
 # constructor method
 def KDTree(data: DataArray, leafsize: int = 10, compact: bool = False, balanced: bool = False, root_bbox=None):
