@@ -41,13 +41,15 @@ def _define_functions(fmt_str):
 ckdtree.init = {}
 _define_functions("""
 _ckdtreelib.ckdtree_init_{c_type}.restype = c_void_p
-_ckdtreelib.ckdtree_init_{c_type}.argtypes = (c_{c_type}_p,
-                                           c_ssize_t_p,
-                                           c_ssize_t, 
-                                           c_ssize_t, 
-                                           c_ssize_t, 
-                                           c_{c_type}_p, 
-                                           c_{c_type}_p)
+_ckdtreelib.ckdtree_init_{c_type}.argtypes = (c_void_p, 
+                                              c_ssize_t,
+                                              c_{c_type}_p,
+                                              c_ssize_t_p,
+                                              c_ssize_t, 
+                                              c_ssize_t, 
+                                              c_ssize_t, 
+                                              c_{c_type}_p, 
+                                              c_{c_type}_p)
 ckdtree.init[types.{numba_type}] = _ckdtreelib.ckdtree_init_{c_type}
 """)
 
@@ -115,3 +117,26 @@ ckdtree.radius_result_set_get_size = _ckdtreelib.radius_result_set_get_size
 _ckdtreelib.radius_result_set_copy_and_free.restype = None
 _ckdtreelib.radius_result_set_copy_and_free.argtypes = (c_void_p, c_ssize_t_p)
 ckdtree.radius_result_set_copy_and_free = _ckdtreelib.radius_result_set_copy_and_free
+
+
+ckdtree.leafsize = {}
+_define_functions("""
+_ckdtreelib.leafsize_{c_type}.restype  = c_ssize_t
+_ckdtreelib.leafsize_{c_type}.argtypes = (c_void_p,)
+ckdtree.leafsize[types.{numba_type}] = _ckdtreelib.leafsize_{c_type}
+""")
+                  
+ckdtree.nodesize = {}
+_define_functions("""
+_ckdtreelib.nodesize_{c_type}.restype  = c_ssize_t
+_ckdtreelib.nodesize_{c_type}.argtypes = (c_void_p,)
+ckdtree.nodesize[types.{numba_type}] = _ckdtreelib.nodesize_{c_type}
+""")
+
+ckdtree.copy_tree = {}
+_define_functions("""
+_ckdtreelib.copy_tree_{c_type}.restype  = c_ssize_t
+_ckdtreelib.copy_tree_{c_type}.argtypes = (c_void_p, c_void_p)
+ckdtree.copy_tree[types.{numba_type}] = _ckdtreelib.copy_tree_{c_type}
+""")         
+
