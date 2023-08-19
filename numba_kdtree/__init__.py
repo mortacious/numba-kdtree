@@ -1,7 +1,7 @@
 try:
     from importlib.metadata import version
 
-    __version__ = version("pyvista_imgui")
+    __version__ = version("numba_kdtree")
 except Exception:  # pragma: no cover # pylint: disable=broad-exception-caught
     try:
         from ._version import __version__
