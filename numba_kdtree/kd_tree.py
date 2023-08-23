@@ -473,7 +473,7 @@ def KDTree(data: DataArray, leafsize: int = 10, compact: bool = False, balanced:
 
     idx = np.arange(n_data, dtype=INT_TYPE)
 
-    kdtree = _make_kdtree(data, root_bbox, idx, leafsize, compact, balanced)
+    kdtree = _make_kdtree(data, root_bbox, idx, leafsize, balanced, compact)
     return kdtree
 
 
@@ -511,7 +511,7 @@ def KDTree_numba(data, leafsize: int = 10, compact: bool = False, balanced: bool
 
         idx = np.arange(n_data, dtype=INT_TYPE)
 
-        kdtree = _make_kdtree(data, root_bbox, idx, leafsize, compact, balanced)
+        kdtree = _make_kdtree(data, root_bbox, idx, leafsize, balanced, compact)
 
         return kdtree
 
