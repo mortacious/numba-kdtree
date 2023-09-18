@@ -6,6 +6,7 @@ from numba.experimental import structref
 from numba.extending import overload_method
 from .ckdtree_ctypes import ckdtree as ckdtree_ct
 import warnings
+from typing import Optional, Any
 
 
 __all__ = ["KDTree"]
@@ -82,29 +83,29 @@ class _KDTree(structref.StructRefProxy):
                                                 data,
                                                 idx)
     @property
-    def root_bbox(self):
+    def root_bbox(self) -> DataArray:
         return _KDTree_get_root_bbox(self)
 
     @property
-    def data(self):
+    def data(self) -> DataArray:
         return _KDTree_get_data(self)
 
     @property
-    def idx(self):
+    def idx(self) -> DataArray:
         return _KDTree_get_idx(self)
 
     @property
-    def size(self):
+    def size(self) -> int:
         return _KDTree_get_size(self)
     
     @property
-    def leafsize(self):
+    def leafsize(self) -> int:
         return _KDTree_get_leafsize(self)
 
-    def built(self):
+    def built(self) -> bool:
         return _KDTree_built(self)
 
-    def __del__(self):
+    def __del__(self) -> None:
         try:
             self.free_index()
         except ModuleNotFoundError:
@@ -112,19 +113,31 @@ class _KDTree(structref.StructRefProxy):
             # might not be possible any more. For now just ignore this
             pass
 
-    def __reduce__(self):
+    def __reduce__(self) -> Any:
         """Pickle support
         """
         args = _KDTree_reduce_args(self)
         return _restore_kdtree, args
 
-    def free_index(self):
+    def free_index(self) -> None:
         _KDTree_free(self)
 
-    def query(self, X, k=1, p=2.0, eps=0.0, distance_upper_bound=np.inf, workers=None):
+    def query(self, 
+              X: DataArray, 
+              k: int = 1, 
+              p: float = 2.0, 
+              eps: float = 0.0, 
+              distance_upper_bound: float = np.inf, 
+              workers: Optional[int] = None) -> tuple[DataArray, DataArray, DataArray]:
         return _KDTree_query(self, X, k, p, eps, distance_upper_bound, workers=workers)
 
-    def query_radius(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_length=False, workers=None):
+    def query_radius(self, X: DataArray, 
+                     r: float, 
+                     p: float = 2.0, 
+                     eps: float = 0.0, 
+                     return_sorted: bool = False, 
+                     return_length: bool = False, 
+                     workers: Optional[int] = None) -> list[DataArray]:
         return _KDTree_query_radius(self, X, r, p, eps, return_sorted, return_length, workers=workers)
 
 structref.define_proxy(_KDTree, KDTreeType,
@@ -454,8 +467,8 @@ def _ol_restore_kdtree_impl(tree_buffer, data, root_bbox, leafsize, indices):
 def _restore_kdtree(tree_buffer, data, root_bbox, leafsize, indices):
     return _restore_kdtree_impl(tree_buffer, data, root_bbox, leafsize, indices)
 
-# constructor method
-def KDTree(data: DataArray, leafsize: int = 10, compact: bool = False, balanced: bool = False, root_bbox=None):
+# constructor function
+def KDTree(data: DataArray, leafsize: int = 10, compact: bool = False, balanced: bool = False, root_bbox: Optional[DataArray] = None):
     if data.dtype == np.float32:
         conv_dtype = np.float32
     else:
@@ -469,6 +482,7 @@ def KDTree(data: DataArray, leafsize: int = 10, compact: bool = False, balanced:
         mins = np.amin(data, axis=0) if n_data > 0 else np.zeros(n_features, dtype=conv_dtype)
         maxes = np.amax(data, axis=0) if n_data > 0 else np.zeros(n_features, dtype=conv_dtype)
         root_bbox = np.vstack((mins, maxes))
+
     root_bbox = np.ascontiguousarray(root_bbox, dtype=conv_dtype)
 
     idx = np.arange(n_data, dtype=INT_TYPE)
@@ -496,22 +510,24 @@ def KDTree_numba(data, leafsize: int = 10, compact: bool = False, balanced: bool
         n_data, n_features = data.shape
 
         if root_bbox is None:
-            root_bbox = np.empty((2, 3), dtype=data.dtype)
-            root_bbox[0] = cmax
-            root_bbox[1] = cmin
+            # compute the bounding box
+            root_bbox_ = np.empty((2, 3), dtype=data.dtype)
+            root_bbox_[0] = cmax
+            root_bbox_[1] = cmin
 
             for i in range(data.shape[0]):
                 for j in range(data.shape[1]):
-                    if data[i, j] < root_bbox[0, j]:
-                        root_bbox[0, j] = data[i, j]
-                    if data[i, j] > root_bbox[1, j]:
-                        root_bbox[1, j] = data[i, j]
-            # compute the bounding box
-        root_bbox = np.ascontiguousarray(root_bbox).astype(conv_dtype)
+                    if data[i, j] < root_bbox_[0, j]:
+                        root_bbox_[0, j] = data[i, j]
+                    if data[i, j] > root_bbox_[1, j]:
+                        root_bbox_[1, j] = data[i, j]
+        else:
+            root_bbox_ = root_bbox
+        root_bbox__ = np.ascontiguousarray(root_bbox_).astype(conv_dtype)
 
         idx = np.arange(n_data, dtype=INT_TYPE)
 
-        kdtree = _make_kdtree(data, root_bbox, idx, leafsize, balanced, compact)
+        kdtree = _make_kdtree(data, root_bbox__, idx, leafsize, balanced, compact)
 
         return kdtree
 
