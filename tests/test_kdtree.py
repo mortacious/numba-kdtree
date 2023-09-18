@@ -243,7 +243,7 @@ def test_use_in_numba_function_parallel(data, kdtree):
 def test_construct_in_numba_function(data):
     @nb.njit(nogil=True, fastmath=True)
     def construct_kdtree_in_numba(data, compact=False, balanced=False):
-        kdtree = KDTree(data, leafsize=10, compact=compact, balanced=balanced)
+        kdtree = KDTree(data, compact=compact, balanced=balanced)
         return kdtree
 
     num_executions = 10
