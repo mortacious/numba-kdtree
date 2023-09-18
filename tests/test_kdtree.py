@@ -207,6 +207,10 @@ def test_kdtree_query_radius_conversion(data, kdtree):
         assert len(ii[i]) == len(ii_test[i])
         assert np.all(ii[i] == ii_test[i]), "Not equal for i={}".format(i)
 
+    # invalid array shapes should not work
+    with pytest.raises(ValueError):
+        ii_invalid = kdtree.query_radius(data[:100], r=radii[:50], return_sorted=True, workers=-1)
+
     num_executions = 5
     r_benchmark = np.linspace(0.01, 0.05, 500).tolist()
     runtime_kdtree_query = timeit(lambda: kdtree.query_radius(data[:500], r=r_benchmark, return_sorted=True),
