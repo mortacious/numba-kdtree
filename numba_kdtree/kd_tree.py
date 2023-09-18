@@ -1,3 +1,4 @@
+from __future__ import annotations
 import numba as nb
 import numpy as np
 
@@ -132,7 +133,7 @@ class _KDTree(structref.StructRefProxy):
         return _KDTree_query(self, X, k, p, eps, distance_upper_bound, workers=workers)
 
     def query_radius(self, X: DataArray, 
-                     r: float, 
+                     r: DataArray | float, 
                      p: float = 2.0, 
                      eps: float = 0.0, 
                      return_sorted: bool = False, 
@@ -356,6 +357,8 @@ def _ol_query_radius(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_len
         dtype = nb.types.float64
         dtype_npy = np.float64
 
+    broadcast_r = (r != nb.types.Array)
+
     func_query_knn = ckdtree_ct.query_radius[dtype]
     radius_result_set_get_size = ckdtree_ct.radius_result_set_get_size
     radius_result_set_copy_and_free = ckdtree_ct.radius_result_set_copy_and_free
@@ -373,6 +376,12 @@ def _ol_query_radius(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_len
             xx = _convert_to_valid_input(X, n_features, dtype_npy)
             n_queries = xx.shape[0]
 
+            # broadcast a scalar r into the appropriate shape
+            if broadcast_r:
+                r_ = np.broadcast_to(r, n_queries)
+            else:
+                r_ = _convert_to_valid_input/(r, 1, dtype_npy).squeeze()
+
             if p < 1:
                 raise ValueError("Only p-norms with 1<=p<=infinity permitted")
 
@@ -381,7 +390,7 @@ def _ol_query_radius(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_len
             results_list.extend([np.empty(0, dtype=np.int64) for i in range(n_queries)])
 
             for i in range(n_queries):
-                result_set = func_query_knn(self.ckdtree, xx[i].ctypes, 1, r, eps, p, return_length, return_sorted)
+                result_set = func_query_knn(self.ckdtree, xx[i].ctypes, 1, r_[i], eps, p, return_length, return_sorted)
                 # copy the result set into a separate buffer owned by python
                 num_results = radius_result_set_get_size(result_set)
                 results = np.empty(num_results, dtype=np.int64)
@@ -407,6 +416,12 @@ def _ol_query_radius(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_len
             xx = _convert_to_valid_input(X, n_features, dtype_npy)
             n_queries = xx.shape[0]
 
+            # broadcast a scalar r into the appropriate shape
+            if broadcast_r:
+                r_ = np.broadcast_to(r, n_queries)
+            else:
+                r_ = _convert_to_valid_input/(r, 1, dtype_npy).squeeze()
+
             if p < 1:
                 raise ValueError("Only p-norms with 1<=p<=infinity permitted")
 
@@ -415,7 +430,7 @@ def _ol_query_radius(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_len
             results_list.extend([np.empty(0, dtype=np.int64) for i in range(n_queries)])
 
             for i in nb.prange(n_queries):
-                result_set = func_query_knn(self.ckdtree, xx[i].ctypes, 1, r, eps, p, return_length, return_sorted)
+                result_set = func_query_knn(self.ckdtree, xx[i].ctypes, 1, r_[i], eps, p, return_length, return_sorted)
                 # copy the result set into a separate buffer owned by python
                 num_results = radius_result_set_get_size(result_set)
                 results = np.empty(num_results, dtype=np.int64)

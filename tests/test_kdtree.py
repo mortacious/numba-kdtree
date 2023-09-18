@@ -165,6 +165,73 @@ def test_kdtree_query_radius_parallel(data, kdtree, scipy_kdtree):
                               number=num_executions) / num_executions
     print("\nradius query time(multi thread):\nscipy:", runtime_scipy_query, "\nkdtree(float):",
           runtime_kdtree_query)
+    
+
+def test_kdtree_query_radius_array(data, kdtree, scipy_kdtree):
+    # pre compile
+    ii = kdtree.query_radius(data[:1], r=0.01, return_sorted=True)
+
+    radii = np.linspace(0.01, 0.05, 100)
+    ii = kdtree.query_radius(data[:100], r=radii, return_sorted=True)
+    ii_scipy = scipy_kdtree.query_ball_point(data[:100], r=radii, return_sorted=True, workers=1)
+
+    for i in range(len(ii)):
+        assert len(ii[i]) == len(ii_scipy[i])
+        assert np.all(ii[i] == ii_scipy[i]), "Not equal for i={}".format(i)
+
+    num_executions = 5
+    r_benchmark = np.linspace(0.01, 0.05, 500)
+    runtime_kdtree_query = timeit(lambda: kdtree.query_radius(data[:500], r=r_benchmark, return_sorted=True),
+                              number=num_executions) / num_executions
+    runtime_scipy_query = timeit(lambda: scipy_kdtree.query_ball_point(data[:500], r=r_benchmark,
+                                                                       return_sorted=True, workers=1),
+                              number=num_executions) / num_executions
+    print("\nradius query time(single thread):\nscipy:", runtime_scipy_query, "\nkdtree(float):",
+          runtime_kdtree_query)
+    
+
+def test_kdtree_query_radius_conversion(data, kdtree):
+    # pre compile
+    radius = [0.01]
+    ii = kdtree.query_radius(data[:1], r=radius, return_sorted=True)
+
+    radii = np.linspace(0.01, 0.05, 100).tolist()
+    ii = kdtree.query_radius(data[:100], r=radii, return_sorted=True)
+    ii_test = kdtree.query_radius(data[:100], r=np.asarray(radii), return_sorted=True)
+
+    for i in range(len(ii)):
+        assert len(ii[i]) == len(ii_test[i])
+        assert np.all(ii[i] == ii_test[i]), "Not equal for i={}".format(i)
+
+    num_executions = 5
+    r_benchmark = np.linspace(0.01, 0.05, 500).tolist()
+    runtime_kdtree_query = timeit(lambda: kdtree.query_radius(data[:500], r=r_benchmark, return_sorted=True),
+                              number=num_executions) / num_executions
+    print("\nradius query time(single thread): kdtree(float):",
+          runtime_kdtree_query)
+
+
+def test_kdtree_query_radius_array_parallel(data, kdtree, scipy_kdtree):
+    # pre compile
+    ii = kdtree.query_radius(data[:1], r=0.01, return_sorted=True, workers=-1)
+
+    radii = np.linspace(0.01, 0.05, 100)
+    ii = kdtree.query_radius(data[:100], r=radii, return_sorted=True, workers=-1)
+    ii_scipy = scipy_kdtree.query_ball_point(data[:100], r=radii, return_sorted=True, workers=-1)
+
+    for i in range(len(ii)):
+        assert len(ii[i]) == len(ii_scipy[i])
+        assert np.all(ii[i] == ii_scipy[i]), "Not equal for i={}".format(i)
+
+    num_executions = 5
+    r_benchmark = np.linspace(0.01, 0.05, 500)
+    runtime_kdtree_query = timeit(lambda: kdtree.query_radius(data[:500], r=r_benchmark, return_sorted=True, workers=-1),
+                              number=num_executions) / num_executions
+    runtime_scipy_query = timeit(lambda: scipy_kdtree.query_ball_point(data[:500], r=r_benchmark,
+                                                                       return_sorted=True, workers=-1),
+                              number=num_executions) / num_executions
+    print("\nradius query time(single thread):\nscipy:", runtime_scipy_query, "\nkdtree(float):",
+          runtime_kdtree_query)
 
 
 def test_argument_conversion(data, kdtree):
