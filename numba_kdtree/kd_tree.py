@@ -382,6 +382,9 @@ def _ol_query_radius(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_len
             else:
                 r_ = _convert_to_valid_input/(r, 1, dtype_npy).squeeze()
 
+            if r_.shape != (n_queries,):
+                raise ValueError("Invalid shape for r. Must be broadcastable to the number of queries.")
+
             if p < 1:
                 raise ValueError("Only p-norms with 1<=p<=infinity permitted")
 
