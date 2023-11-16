@@ -2,18 +2,15 @@ from __future__ import annotations
 import numba as nb
 import numpy as np
 
-from numba.core import types
+from numba.core import types, cgutils
 from numba.experimental import structref
-from numba.extending import overload_method
-from .ckdtree_ctypes import ckdtree as ckdtree_ct
+from numba.extending import overload_method, intrinsic
+from .ckdtree import ckdtree as ckdtree_ct
 import warnings
 from typing import Optional, Any
 
 
 __all__ = ["KDTree"]
-
-FASTMATH = True
-DEBUG = False
 
 INT_TYPE = np.int64
 INT_TYPE_T = nb.int64
@@ -34,17 +31,17 @@ BoolArray = np.ndarray
 
 NUMBA_THREADS = nb.config.NUMBA_NUM_THREADS
 
+@intrinsic
+def address_as_void_pointer(typingctx, src):
+    """ returns a void pointer from a given memory address """
+    sig = types.voidptr(src)
 
-@nb.njit(nogil=True, inline="always", debug=DEBUG)
-def arange(length, dtype=INT_TYPE):
-    """Simple `np.arange` implementation without start/step."""
-    out = np.empty((length,), dtype=dtype)
-    for i in range(length):  # pylint: disable=not-an-iterable
-        out[i] = i
-    return out
+    def codegen(cgctx, builder, sig, args):
+        return builder.inttoptr(args[0], cgutils.voidptr_t)
+    return sig, codegen
 
 
-@nb.njit(nogil=True, inline='always', debug=DEBUG)
+@nb.njit(nogil=True, inline='always', cache=True)
 def _list_to_2d_array(arraylist, dtype):
     n = len(arraylist)
     k = arraylist[0].shape[0]
@@ -54,7 +51,7 @@ def _list_to_2d_array(arraylist, dtype):
     return array
 
 
-@nb.generated_jit(nopython=True, nogil=True, fastmath=FASTMATH)
+@nb.generated_jit(nopython=True, nogil=True, fastmath=True, cache=True)
 def _convert_to_valid_input(X, n_features, dtype):
     convert_list_to_array = isinstance(X, (nb.types.ListType, nb.types.List)) and isinstance(X.dtype, nb.types.ArrayCompatible)
 
@@ -145,54 +142,56 @@ structref.define_proxy(_KDTree, KDTreeType,
                        ["ckdtree", "root_bbox", "data", "idx"])
 
 # define wrapper functions for each method of the kdtree
-@nb.njit()
+@nb.njit(cache=True)
 def _KDTree_get_root_bbox(self):
     return self.root_bbox
 
 
-@nb.njit()
+@nb.njit(cache=True)
 def _KDTree_get_data(self):
     return self.data
 
 
-@nb.njit()
+@nb.njit(cache=True)
 def _KDTree_get_idx(self):
     return self.idx
 
 
-@nb.njit()
+@nb.njit(cache=True)
 def _KDTree_get_size(self):
     return self._size()
 
-@nb.njit()
+@nb.njit(cache=True)
 def _KDTree_get_leafsize(self):
     return self._leafsize()
 
-@nb.njit()
+@nb.njit(cache=True)
 def _KDTree_reduce_args(self):
     return self._reduce_args()
 
-@nb.njit()
+@nb.njit(cache=True)
 def _KDTree_built(self):
     return self.ckdtree != 0
 
 
-@nb.njit()
+@nb.njit(cache=True)
 def _KDTree_free(self):
     self.free_index()
 
 
-@nb.njit()
+@nb.njit(cache=True)
 def _KDTree_query(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf, workers=None):
     return self.query(X, k=k, p=p, eps=eps, distance_upper_bound=distance_upper_bound, workers=workers)
 
 
-@nb.njit()
+@nb.njit(cache=True)
 def _KDTree_query_radius(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_length=False, workers=None):
     return self.query_radius(X, r, p, eps, return_sorted, return_length, workers=workers)
 
 
-@overload_method(KDTreeType, "_size")
+# function required for pickling the Kdtree
+
+@overload_method(KDTreeType, "_size", jit_options={"cache": True})
 def _ol_size(self):
     dtype = self.field_dict['data'].dtype
     if dtype != nb.types.float32:
@@ -206,7 +205,7 @@ def _ol_size(self):
     return _size_impl
 
 
-@overload_method(KDTreeType, "_leafsize")
+@overload_method(KDTreeType, "_leafsize", jit_options={"cache": True})
 def _ol_leafsize(self):
     """Returns the leaf size of the underlying tree
     """
@@ -222,7 +221,7 @@ def _ol_leafsize(self):
     return _leafsize_impl
 
 
-@overload_method(KDTreeType, "free_index")
+@overload_method(KDTreeType, "free_index", jit_options={"cache": True})
 def _ol_free_index(self):
     dtype = self.field_dict['data'].dtype
     if dtype != nb.types.float32:
@@ -235,7 +234,7 @@ def _ol_free_index(self):
 
     return _free_index_impl
 
-@overload_method(KDTreeType, "_reduce_args")
+@overload_method(KDTreeType, "_reduce_args", jit_options={"cache": True})
 def _ol_reduce_args(self):
     dtype = self.field_dict['data'].dtype
     if dtype != nb.types.float32:
@@ -260,7 +259,7 @@ def _ol_reduce_args(self):
     return _reduce_args_impl
 
 
-@overload_method(KDTreeType, "build_index", jit_options={"nogil": True, "debug": DEBUG, "fastmath": FASTMATH})
+@overload_method(KDTreeType, "build_index", jit_options={"nogil": True, "cache" : True, "fastmath": True})
 def _ol_build_index(self, leafsize, balanced=False, compact=False):
     # choose the appropriate methods based on the data type
     dtype = self.field_dict['data'].dtype
@@ -273,9 +272,9 @@ def _ol_build_index(self, leafsize, balanced=False, compact=False):
 
     def _build_index_impl(self, leafsize, balanced=False, compact=False):
         n_data, n_features = self.data.shape
-        if self.ckdtree != 0:
-            func_free(self.ckdtree)
-        self.ckdtree = func_init(0, 0, self.data.ctypes, self.idx.ctypes, n_data, n_features, leafsize, self.root_bbox[0].ctypes, self.root_bbox[1].ctypes)
+        #if self.ckdtree != 0:
+        #    func_free(self.ckdtree)
+        self.ckdtree = func_init(address_as_void_pointer(0), 0, self.data.ctypes, self.idx.ctypes, n_data, n_features, leafsize, self.root_bbox[0].ctypes, self.root_bbox[1].ctypes)
         compact_ = 1 if compact else 0
         balanced_ = 1 if balanced else 0
         func_build(self.ckdtree, 0, n_data, self.root_bbox[0].ctypes, self.root_bbox[1].ctypes, balanced_, compact_)
@@ -283,7 +282,7 @@ def _ol_build_index(self, leafsize, balanced=False, compact=False):
     return _build_index_impl
 
 
-@overload_method(KDTreeType, "query", jit_options={"nogil": True, "debug": DEBUG, "fastmath": FASTMATH, 'parallel': True})
+@overload_method(KDTreeType, "query", jit_options={"nogil": True, "cache": False, "fastmath": True, 'parallel': True})
 def _ol_query(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf, workers=None):
     # choose the appropriate methods based on the data type
     dtype = self.field_dict['data'].dtype
@@ -341,13 +340,13 @@ def _ol_query(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf, workers=N
                 func_query_knn(self.ckdtree, dd[i].ctypes, ii[i].ctypes, nn[i:i + 1].ctypes,
                                xx[i].ctypes, 1, k, eps, p, distance_upper_bound)
             # restore the previous number of threads
-            nb.set_num_threads(numba_threads_prev)
+            #nb.set_num_threads(numba_threads_prev)
             return dd, ii, nn
 
         return _query_parallel_impl
 
 
-@overload_method(KDTreeType, "query_radius", jit_options={"nogil": True, "debug": DEBUG, "fastmath": FASTMATH, 'parallel': True})
+@overload_method(KDTreeType, "query_radius", jit_options={"nogil": True, "cache": False, "fastmath": True, 'parallel': True})
 def _ol_query_radius(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_length=False, workers=None):
     # choose the appropriate methods based on the data type
     dtype = self.field_dict['data'].dtype
@@ -448,7 +447,7 @@ def _ol_query_radius(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_len
         return _query_radius_parallel_impl
 
 
-@nb.njit(nogil=True)
+@nb.njit(nogil=True, cache=True)
 def _make_kdtree(data, root_bbox, idx, leafsize=10, balanced=False, compact=False):
     # create the transparent underlying c object by calling the function appropriate to the data dtype
     ckdtree = np.uint64(0)  # leave the c object empty for now
@@ -460,7 +459,7 @@ def _restore_kdtree_impl(tree_buffer, data, root_bbox, leafsize, indices):
     # this is a stub for numba overload
     pass
 
-@nb.extending.overload(_restore_kdtree_impl, jit_options={'nogil': True, 'fastmath': True})
+@nb.extending.overload(_restore_kdtree_impl, jit_options={'nogil': True, 'fastmath': True, "cache": True})
 def _ol_restore_kdtree_impl(tree_buffer, data, root_bbox, leafsize, indices):
     dtype = data.dtype
     if dtype == nb.types.float32:
@@ -483,11 +482,11 @@ def _ol_restore_kdtree_impl(tree_buffer, data, root_bbox, leafsize, indices):
     return _restore_kdtree_impl_impl
 
 # wrapper function to call the overloaded function above
-@nb.njit()
+@nb.njit(cache=True)
 def _restore_kdtree(tree_buffer, data, root_bbox, leafsize, indices):
     return _restore_kdtree_impl(tree_buffer, data, root_bbox, leafsize, indices)
 
-# constructor function
+# python constructor function
 def KDTree(data: DataArray, leafsize: int = 10, compact: bool = False, balanced: bool = False, root_bbox: Optional[DataArray] = None):
     if data.dtype == np.float32:
         conv_dtype = np.float32
@@ -511,8 +510,8 @@ def KDTree(data: DataArray, leafsize: int = 10, compact: bool = False, balanced:
     return kdtree
 
 
-# constructor method
-@nb.extending.overload(KDTree, jit_options={'nogil': True, 'fastmath': True})
+# numba constructor implementation
+@nb.extending.overload(KDTree, jit_options={'nogil': True, 'fastmath': True, 'cache': True})
 def KDTree_numba(data, leafsize: int = 10, compact: bool = False, balanced: bool = False, root_bbox=None):
     if data.dtype == nb.types.float32:
         conv_dtype = nb.types.float32

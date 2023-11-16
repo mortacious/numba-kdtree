@@ -72,7 +72,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 if platform.system() == "Windows":
     extra_compile_args = ['/O2', '/DKDTREE_COMPILING=1']
 else:
-    extra_compile_args = ['-fPIC', '-O3', '-DKDTREE_COMPILING=1']
+    extra_compile_args = ['-fPIC', '-shared', '-O3', '-DKDTREE_COMPILING=1']
     if platform.system() == "Darwin":
         extra_compile_args.append('-std=c++11')
 
