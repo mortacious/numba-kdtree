@@ -1,6 +1,5 @@
 import pytest
-from numba_kdtree import KDTree
-from numba_kdtree.kd_tree import KDTreeProxy
+from numba_kdtree import KDTree, KDTreeType
 import numpy as np
 from scipy.spatial import cKDTree
 import numba as nb
@@ -14,7 +13,7 @@ def data():
 
 
 @pytest.fixture(scope='module')
-def kdtree(data) -> KDTreeProxy:
+def kdtree(data) -> KDTreeType:
     kd_tree = KDTree(data, leafsize=10, balanced=False, compact=False)
     return kd_tree
 
@@ -57,9 +56,10 @@ def test_kdtree_build(data):
           runtime_kdtree_f, "\nkdtree(double):", runtime_kdtree_d)
 
 
-def test_kdtree_query(data, kdtree: KDTreeProxy, scipy_kdtree):
+def test_kdtree_query(data, kdtree: KDTreeType, scipy_kdtree):
     k = 10
     dd, ii, nn = kdtree.query(data[:1], k=k)  # pre-compile
+
     # query the nearest neighbors of each input point in a single thread
     dd, ii, nn = kdtree.query(data, k=k)
     dd_scipy, ii_scipy = scipy_kdtree.query(data, k=k, workers=1)
@@ -80,7 +80,7 @@ def test_kdtree_query(data, kdtree: KDTreeProxy, scipy_kdtree):
 def test_kdtree_query_parallel(data, kdtree, scipy_kdtree):
     k = 10
     dd, ii, nn = kdtree.query_parallel(data[:1], k=k)  # pre-compile
-
+    
     # query using all available cpu cores
     dd, ii, nn = kdtree.query_parallel(data, k=k)  # pre-compile
     dd_scipy, ii_scipy = scipy_kdtree.query(data, k=k, workers=-1)

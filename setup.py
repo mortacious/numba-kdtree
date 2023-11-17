@@ -67,8 +67,6 @@ class build_ext(build_ext_orig):
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
-#version = import_module_from_path('numba_kdtree/_version.py').__version__
-
 if platform.system() == "Windows":
     extra_compile_args = ['/O2', '/DKDTREE_COMPILING=1']
 else:
