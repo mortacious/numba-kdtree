@@ -51,8 +51,12 @@ def _list_to_2d_array(arraylist, dtype):
     return array
 
 
-@nb.generated_jit(nopython=True, nogil=True, fastmath=True, cache=True)
 def _convert_to_valid_input(X, n_features, dtype):
+    # this is a stub for numba overload
+    pass
+
+@nb.extending.overload(_convert_to_valid_input, jit_options={'nogil': True, 'fastmath': True, "cache": True})
+def _ol_restore_kdtree_impl(X, n_features, dtype):
     convert_list_to_array = isinstance(X, (nb.types.ListType, nb.types.List)) and isinstance(X.dtype, nb.types.ArrayCompatible)
 
     def _convert_impl(X, n_features, dtype):
@@ -72,9 +76,8 @@ class KDTreeType(types.StructRef):
         return tuple((name, types.unliteral(typ)) for name, typ in fields)
 
 
-class _KDTree(structref.StructRefProxy):
+class KDTreeProxy(structref.StructRefProxy):
     def __new__(cls, ckdtree, root_bbox, data, idx):
-        ckdtree = nb.types.voidptr()
         return structref.StructRefProxy.__new__(cls,
                                                 ckdtree,
                                                 root_bbox,
@@ -155,7 +158,7 @@ class _KDTree(structref.StructRefProxy):
         return _KDTree_query_radius_parallel(self, X, r, p, eps, return_sorted, return_length, workers=workers)
 
 
-structref.define_proxy(_KDTree, KDTreeType,
+structref.define_proxy(KDTreeProxy, KDTreeType,
                        ["ckdtree", "root_bbox", "data", "idx"])
 
 # define wrapper functions for each method of the kdtree
@@ -214,8 +217,7 @@ def _KDTree_query_radius_parallel(self, X, r, p=2.0, eps=0.0, return_sorted=Fals
     return self.query_radius_parallel(X, r, p, eps, return_sorted, return_length, workers=workers)
 
 
-# function required for pickling the Kdtree
-
+# functions required for pickling the Kdtree
 @overload_method(KDTreeType, "_size", jit_options={"cache": True})
 def _ol_size(self):
     dtype = self.field_dict['data'].dtype
@@ -496,10 +498,10 @@ def _ol_query_radius_parallel(self, X, r, p=2.0, eps=0.0, return_sorted=False, r
 
 
 @nb.njit(nogil=True, cache=True)
-def _make_kdtree(data, root_bbox, idx, leafsize=10, balanced=False, compact=False):
+def _make_kdtree(data, root_bbox, idx, leafsize=10, balanced=False, compact=False) -> KDTreeType:
     # create the transparent underlying c object by calling the function appropriate to the data dtype
     ckdtree = np.uint64(0)  # leave the c object empty for now
-    kdtree = _KDTree(ckdtree, root_bbox, data, idx)
+    kdtree = KDTreeProxy(ckdtree, root_bbox, data, idx)
     kdtree.build_index(leafsize, balanced, compact)
     return kdtree
 
@@ -522,7 +524,7 @@ def _ol_restore_kdtree_impl(tree_buffer, data, root_bbox, leafsize, indices):
         data_conv = data.astype(dtype_npy) # is this really needed?
         n_data, n_features = data.shape
         ckdtree = np.uint64(0)  # leave the c object empty for now
-        kdtree = _KDTree(ckdtree, root_bbox, data_conv, indices)
+        kdtree = KDTreeProxy(ckdtree, root_bbox, data_conv, indices)
         # call init with the existing tree
         kdtree.ckdtree = func_init(tree_buffer.ctypes, tree_buffer.size, data_conv.ctypes, indices.ctypes, n_data, n_features, leafsize, root_bbox[0].ctypes, root_bbox[1].ctypes)
         return kdtree
@@ -535,7 +537,7 @@ def _restore_kdtree(tree_buffer, data, root_bbox, leafsize, indices):
     return _restore_kdtree_impl(tree_buffer, data, root_bbox, leafsize, indices)
 
 # python constructor function
-def KDTree(data: DataArray, leafsize: int = 10, compact: bool = False, balanced: bool = False, root_bbox: Optional[DataArray] = None):
+def KDTree(data: DataArray, leafsize: int = 10, compact: bool = False, balanced: bool = False, root_bbox: Optional[DataArray] = None) -> KDTreeProxy:
     if data.dtype == np.float32:
         conv_dtype = np.float32
     else:
