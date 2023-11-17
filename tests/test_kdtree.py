@@ -79,10 +79,10 @@ def test_kdtree_query(data, kdtree, scipy_kdtree):
 
 def test_kdtree_query_parallel(data, kdtree, scipy_kdtree):
     k = 10
-    dd, ii, nn = kdtree.query(data[:1], k=k, workers=-1)  # pre-compile
+    dd, ii, nn = kdtree.query_parallel(data[:1], k=k)  # pre-compile
 
     # query using all available cpu cores
-    dd, ii, nn = kdtree.query(data, k=k, workers=-1)  # pre-compile
+    dd, ii, nn = kdtree.query_parallel(data, k=k)  # pre-compile
     dd_scipy, ii_scipy = scipy_kdtree.query(data, k=k, workers=-1)
 
     assert np.all(ii == ii_scipy)
@@ -90,7 +90,7 @@ def test_kdtree_query_parallel(data, kdtree, scipy_kdtree):
 
     num_executions = 5
     k_benchmark = 30
-    runtime_kdtree_query = timeit(lambda: kdtree.query(data, k=k_benchmark, workers=-1),
+    runtime_kdtree_query = timeit(lambda: kdtree.query_parallel(data, k=k_benchmark),
                               number=num_executions) / num_executions
     runtime_scipy_query = timeit(lambda: scipy_kdtree.query(data, k=k_benchmark, workers=-1),
                               number=num_executions) / num_executions
@@ -147,9 +147,9 @@ def test_kdtree_query_radius(data, kdtree, scipy_kdtree):
 
 
 def test_kdtree_query_radius_parallel(data, kdtree, scipy_kdtree):
-    ii = kdtree.query_radius(data[:1], r=0.01, return_sorted=True, workers=-1)
+    ii = kdtree.query_radius_parallel(data[:1], r=0.01, return_sorted=True, workers=-1)
 
-    ii = kdtree.query_radius(data[:100], r=0.01, return_sorted=True, workers=-1)
+    ii = kdtree.query_radius_parallel(data[:100], r=0.01, return_sorted=True, workers=-1)
     ii_scipy = scipy_kdtree.query_ball_point(data[:100], r=0.01, return_sorted=True, workers=-1)
 
     for i in range(len(ii)):
@@ -158,7 +158,7 @@ def test_kdtree_query_radius_parallel(data, kdtree, scipy_kdtree):
 
     num_executions = 5
     r_benchmark = 0.1
-    runtime_kdtree_query = timeit(lambda: kdtree.query_radius(data[:500], r=r_benchmark, return_sorted=True, workers=-1),
+    runtime_kdtree_query = timeit(lambda: kdtree.query_radius_parallel(data[:500], r=r_benchmark, return_sorted=True, workers=-1),
                               number=num_executions) / num_executions
     runtime_scipy_query = timeit(lambda: scipy_kdtree.query_ball_point(data[:500], r=r_benchmark,
                                                                        return_sorted=True, workers=-1),
@@ -209,7 +209,7 @@ def test_kdtree_query_radius_conversion(data, kdtree):
 
     # invalid array shapes should not work
     with pytest.raises(ValueError):
-        ii_invalid = kdtree.query_radius(data[:100], r=radii[:50], return_sorted=True, workers=-1)
+        ii_invalid = kdtree.query_radius(data[:100], r=radii[:50], return_sorted=True)
 
     num_executions = 5
     r_benchmark = np.linspace(0.01, 0.05, 500).tolist()
@@ -221,10 +221,10 @@ def test_kdtree_query_radius_conversion(data, kdtree):
 
 def test_kdtree_query_radius_array_parallel(data, kdtree, scipy_kdtree):
     # pre compile
-    ii = kdtree.query_radius(data[:1], r=0.01, return_sorted=True, workers=-1)
+    ii = kdtree.query_radius_parallel(data[:1], r=0.01, return_sorted=True, workers=-1)
 
     radii = np.linspace(0.01, 0.05, 100)
-    ii = kdtree.query_radius(data[:100], r=radii, return_sorted=True, workers=-1)
+    ii = kdtree.query_radius_parallel(data[:100], r=radii, return_sorted=True, workers=-1)
     ii_scipy = scipy_kdtree.query_ball_point(data[:100], r=radii, return_sorted=True, workers=-1)
 
     for i in range(len(ii)):
@@ -233,7 +233,7 @@ def test_kdtree_query_radius_array_parallel(data, kdtree, scipy_kdtree):
 
     num_executions = 5
     r_benchmark = np.linspace(0.01, 0.05, 500)
-    runtime_kdtree_query = timeit(lambda: kdtree.query_radius(data[:500], r=r_benchmark, return_sorted=True, workers=-1),
+    runtime_kdtree_query = timeit(lambda: kdtree.query_radius_parallel(data[:500], r=r_benchmark, return_sorted=True, workers=-1),
                               number=num_executions) / num_executions
     runtime_scipy_query = timeit(lambda: scipy_kdtree.query_ball_point(data[:500], r=r_benchmark,
                                                                        return_sorted=True, workers=-1),
@@ -291,7 +291,7 @@ def test_use_in_numba_function(data, kdtree):
 
 
 def test_use_in_numba_function_parallel(data, kdtree):
-    @nb.njit(nogil=True, fastmath=True, parallel=True)
+    @nb.njit(nogil=True, fastmath=True, cache=True, parallel=True)
     def query_numba_parallel(data, kdtree, k):
         ii = np.empty((data.shape[0], k), dtype=np.int64)
         for i in nb.prange(data.shape[0]):
@@ -301,13 +301,13 @@ def test_use_in_numba_function_parallel(data, kdtree):
 
     # pre compile
     ii = query_numba_parallel(data, kdtree, 10)
-    dd, ii, nn = kdtree.query(data[:1], k=10, workers=-1)  # pre-compile
+    dd, ii, nn = kdtree.query_parallel(data[:1], k=10, workers=-1)  # pre-compile
 
     num_executions = 5
     k_benchmark = 30
 
     # run times should be very similar here
-    runtime_kdtree_query = timeit(lambda: kdtree.query(data, k=k_benchmark, workers=-1),
+    runtime_kdtree_query = timeit(lambda: kdtree.query_parallel(data, k=k_benchmark, workers=-1),
                               number=num_executions) / num_executions
     runtime_numba_kdtree_query = timeit(lambda: query_numba_parallel(data, kdtree, k_benchmark),
                               number=num_executions) / num_executions
@@ -341,10 +341,10 @@ def test_pickle(data, kdtree):
 
     k = 10
     # query the old tree
-    dd, ii, nn = kdtree.query(data[:100], k=k, workers=-1)
+    dd, ii, nn = kdtree.query_parallel(data[:100], k=k, workers=-1)
 
     # query the new tree
-    dd_r, ii_r, nn_r = restored_kdtree.query(data[:100], k=k, workers=-1)
+    dd_r, ii_r, nn_r = restored_kdtree.query_parallel(data[:100], k=k, workers=-1)
 
     assert np.allclose(dd, dd_r)
     assert np.all(ii == ii_r)
