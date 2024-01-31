@@ -2,18 +2,15 @@ from __future__ import annotations
 import numba as nb
 import numpy as np
 
-from numba.core import types
+from numba.core import types, cgutils
 from numba.experimental import structref
-from numba.extending import overload_method
-from .ckdtree_ctypes import ckdtree as ckdtree_ct
+from numba.extending import overload_method, intrinsic
+from .ckdtree import ckdtree as ckdtree_ct
 import warnings
 from typing import Optional, Any
 
 
 __all__ = ["KDTree"]
-
-FASTMATH = True
-DEBUG = False
 
 INT_TYPE = np.int64
 INT_TYPE_T = nb.int64
@@ -34,17 +31,17 @@ BoolArray = np.ndarray
 
 NUMBA_THREADS = nb.config.NUMBA_NUM_THREADS
 
+@intrinsic
+def address_as_void_pointer(typingctx, src):
+    """ returns a void pointer from a given memory address """
+    sig = types.voidptr(src)
 
-@nb.njit(nogil=True, inline="always", debug=DEBUG)
-def arange(length, dtype=INT_TYPE):
-    """Simple `np.arange` implementation without start/step."""
-    out = np.empty((length,), dtype=dtype)
-    for i in range(length):  # pylint: disable=not-an-iterable
-        out[i] = i
-    return out
+    def codegen(cgctx, builder, sig, args):
+        return builder.inttoptr(args[0], cgutils.voidptr_t)
+    return sig, codegen
 
 
-@nb.njit(nogil=True, inline='always', debug=DEBUG)
+@nb.njit(nogil=True, inline='always', cache=True)
 def _list_to_2d_array(arraylist, dtype):
     n = len(arraylist)
     k = arraylist[0].shape[0]
@@ -54,7 +51,7 @@ def _list_to_2d_array(arraylist, dtype):
     return array
 
 
-@nb.generated_jit(nopython=True, nogil=True, fastmath=FASTMATH)
+@nb.generated_jit(nopython=True, nogil=True, fastmath=True, cache=True)
 def _convert_to_valid_input(X, n_features, dtype):
     convert_list_to_array = isinstance(X, (nb.types.ListType, nb.types.List)) and isinstance(X.dtype, nb.types.ArrayCompatible)
 
@@ -128,71 +125,98 @@ class _KDTree(structref.StructRefProxy):
               k: int = 1, 
               p: float = 2.0, 
               eps: float = 0.0, 
+              distance_upper_bound: float = np.inf) -> tuple[DataArray, DataArray, DataArray]:
+        return _KDTree_query(self, X, k, p, eps, distance_upper_bound)
+    
+    def query_parallel(self, 
+              X: DataArray, 
+              k: int = 1, 
+              p: float = 2.0, 
+              eps: float = 0.0, 
               distance_upper_bound: float = np.inf, 
-              workers: Optional[int] = None) -> tuple[DataArray, DataArray, DataArray]:
-        return _KDTree_query(self, X, k, p, eps, distance_upper_bound, workers=workers)
+              workers: int = -1) -> tuple[DataArray, DataArray, DataArray]:
+        return _KDTree_query_parallel(self, X, k, p, eps, distance_upper_bound, workers=workers)
 
     def query_radius(self, X: DataArray, 
                      r: DataArray | float, 
                      p: float = 2.0, 
                      eps: float = 0.0, 
                      return_sorted: bool = False, 
+                     return_length: bool = False) -> list[DataArray]:
+        return _KDTree_query_radius(self, X, r, p, eps, return_sorted, return_length)
+    
+    def query_radius_parallel(self, X: DataArray, 
+                     r: DataArray | float, 
+                     p: float = 2.0, 
+                     eps: float = 0.0, 
+                     return_sorted: bool = False, 
                      return_length: bool = False, 
-                     workers: Optional[int] = None) -> list[DataArray]:
-        return _KDTree_query_radius(self, X, r, p, eps, return_sorted, return_length, workers=workers)
+                     workers: int = -1) -> list[DataArray]:
+        return _KDTree_query_radius_parallel(self, X, r, p, eps, return_sorted, return_length, workers=workers)
+
 
 structref.define_proxy(_KDTree, KDTreeType,
                        ["ckdtree", "root_bbox", "data", "idx"])
 
 # define wrapper functions for each method of the kdtree
-@nb.njit()
+@nb.njit(cache=True)
 def _KDTree_get_root_bbox(self):
     return self.root_bbox
 
 
-@nb.njit()
+@nb.njit(cache=True)
 def _KDTree_get_data(self):
     return self.data
 
 
-@nb.njit()
+@nb.njit(cache=True)
 def _KDTree_get_idx(self):
     return self.idx
 
 
-@nb.njit()
+@nb.njit(cache=True)
 def _KDTree_get_size(self):
     return self._size()
 
-@nb.njit()
+@nb.njit(cache=True)
 def _KDTree_get_leafsize(self):
     return self._leafsize()
 
-@nb.njit()
+@nb.njit(cache=True)
 def _KDTree_reduce_args(self):
     return self._reduce_args()
 
-@nb.njit()
+@nb.njit(cache=True)
 def _KDTree_built(self):
     return self.ckdtree != 0
 
 
-@nb.njit()
+@nb.njit(cache=True)
 def _KDTree_free(self):
     self.free_index()
 
 
-@nb.njit()
-def _KDTree_query(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf, workers=None):
-    return self.query(X, k=k, p=p, eps=eps, distance_upper_bound=distance_upper_bound, workers=workers)
+@nb.njit(cache=True)
+def _KDTree_query(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf):
+    return self.query(X, k=k, p=p, eps=eps, distance_upper_bound=distance_upper_bound)
+
+@nb.njit(cache=False)
+def _KDTree_query_parallel(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf, workers=-1):
+    return self.query_parallel(X, k=k, p=p, eps=eps, distance_upper_bound=distance_upper_bound, workers=workers)
 
 
-@nb.njit()
-def _KDTree_query_radius(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_length=False, workers=None):
-    return self.query_radius(X, r, p, eps, return_sorted, return_length, workers=workers)
+@nb.njit(cache=True)
+def _KDTree_query_radius(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_length=False):
+    return self.query_radius(X, r, p, eps, return_sorted, return_length)
+
+@nb.njit(cache=False)
+def _KDTree_query_radius_parallel(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_length=False, workers=-1):
+    return self.query_radius_parallel(X, r, p, eps, return_sorted, return_length, workers=workers)
 
 
-@overload_method(KDTreeType, "_size")
+# function required for pickling the Kdtree
+
+@overload_method(KDTreeType, "_size", jit_options={"cache": True})
 def _ol_size(self):
     dtype = self.field_dict['data'].dtype
     if dtype != nb.types.float32:
@@ -206,7 +230,7 @@ def _ol_size(self):
     return _size_impl
 
 
-@overload_method(KDTreeType, "_leafsize")
+@overload_method(KDTreeType, "_leafsize", jit_options={"cache": True})
 def _ol_leafsize(self):
     """Returns the leaf size of the underlying tree
     """
@@ -222,7 +246,7 @@ def _ol_leafsize(self):
     return _leafsize_impl
 
 
-@overload_method(KDTreeType, "free_index")
+@overload_method(KDTreeType, "free_index", jit_options={"cache": True})
 def _ol_free_index(self):
     dtype = self.field_dict['data'].dtype
     if dtype != nb.types.float32:
@@ -235,7 +259,7 @@ def _ol_free_index(self):
 
     return _free_index_impl
 
-@overload_method(KDTreeType, "_reduce_args")
+@overload_method(KDTreeType, "_reduce_args", jit_options={"cache": True})
 def _ol_reduce_args(self):
     dtype = self.field_dict['data'].dtype
     if dtype != nb.types.float32:
@@ -260,7 +284,7 @@ def _ol_reduce_args(self):
     return _reduce_args_impl
 
 
-@overload_method(KDTreeType, "build_index", jit_options={"nogil": True, "debug": DEBUG, "fastmath": FASTMATH})
+@overload_method(KDTreeType, "build_index", jit_options={"nogil": True, "cache" : True, "fastmath": True})
 def _ol_build_index(self, leafsize, balanced=False, compact=False):
     # choose the appropriate methods based on the data type
     dtype = self.field_dict['data'].dtype
@@ -273,9 +297,9 @@ def _ol_build_index(self, leafsize, balanced=False, compact=False):
 
     def _build_index_impl(self, leafsize, balanced=False, compact=False):
         n_data, n_features = self.data.shape
-        if self.ckdtree != 0:
-            func_free(self.ckdtree)
-        self.ckdtree = func_init(0, 0, self.data.ctypes, self.idx.ctypes, n_data, n_features, leafsize, self.root_bbox[0].ctypes, self.root_bbox[1].ctypes)
+        #if self.ckdtree != 0:
+        #    func_free(self.ckdtree)
+        self.ckdtree = func_init(address_as_void_pointer(0), 0, self.data.ctypes, self.idx.ctypes, n_data, n_features, leafsize, self.root_bbox[0].ctypes, self.root_bbox[1].ctypes)
         compact_ = 1 if compact else 0
         balanced_ = 1 if balanced else 0
         func_build(self.ckdtree, 0, n_data, self.root_bbox[0].ctypes, self.root_bbox[1].ctypes, balanced_, compact_)
@@ -283,8 +307,41 @@ def _ol_build_index(self, leafsize, balanced=False, compact=False):
     return _build_index_impl
 
 
-@overload_method(KDTreeType, "query", jit_options={"nogil": True, "debug": DEBUG, "fastmath": FASTMATH, 'parallel': True})
-def _ol_query(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf, workers=None):
+@overload_method(KDTreeType, "query", jit_options={"nogil": True, "cache": True, "fastmath": True, 'parallel': False})
+def _ol_query(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf):
+    # choose the appropriate methods based on the data type
+    dtype = self.field_dict['data'].dtype
+    if dtype == nb.types.float32:
+        dtype_npy = np.float32
+    else:
+        dtype = nb.types.float64
+        dtype_npy = np.float64
+
+    func_query_knn = ckdtree_ct.query_knn[dtype] 
+    
+    # single threaded case
+    def _query_impl(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf):
+        n_features = self.data.shape[1]
+        xx = _convert_to_valid_input(X, n_features, dtype_npy)
+        n_queries = xx.shape[0]
+        if p < 1:
+            raise ValueError("Only p-norms with 1<=p<=infinity permitted")
+
+        dd = np.empty((n_queries, k), dtype=dtype_npy)
+        ii = np.full((n_queries, k), fill_value=-1, dtype=INT_TYPE)
+        nn = np.empty((n_queries,), dtype=INT_TYPE)
+
+        for i in range(n_queries):
+            func_query_knn(self.ckdtree, dd[i].ctypes, ii[i].ctypes, nn[i:i+1].ctypes,
+                            xx[i].ctypes, 1, k, eps, p, distance_upper_bound)
+        return dd, ii, nn
+
+    return _query_impl
+    
+
+# parallel version
+@overload_method(KDTreeType, "query_parallel", jit_options={"nogil": True, "cache": False, "fastmath": True, 'parallel': True})
+def _ol_query_parallel(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf, workers=-1):
     # choose the appropriate methods based on the data type
     dtype = self.field_dict['data'].dtype
     if dtype == nb.types.float32:
@@ -295,60 +352,36 @@ def _ol_query(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf, workers=N
 
     func_query_knn = ckdtree_ct.query_knn[dtype]
 
-    # suppress the performance warning here as the non-parallel function will be compiled with parallel=True
-    warnings.simplefilter('ignore', category=nb.errors.NumbaPerformanceWarning)
+    def _query_parallel_impl(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf, workers=-1):
+        numba_threads_prev = nb.get_num_threads()
+        if workers < 0:
+            # use all available numba threads
+            nb.set_num_threads(NUMBA_THREADS)
+        else:
+            # only the specified number of threads
+            nb.set_num_threads(int(workers))
 
-    # strangely we have to check for all cases of None here...
-    if workers is None or workers is nb.types.none or isinstance(workers, nb.types.Omitted):
-        # single threaded case: ignore the number of workers and just operate sequentially
-        def _query_impl(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf, workers=None):
-            n_features = self.data.shape[1]
-            xx = _convert_to_valid_input(X, n_features, dtype_npy)
-            n_queries = xx.shape[0]
-            if p < 1:
-                raise ValueError("Only p-norms with 1<=p<=infinity permitted")
+        n_features = self.data.shape[1]
+        xx = _convert_to_valid_input(X, n_features, dtype_npy)
 
-            dd = np.empty((n_queries, k), dtype=dtype_npy)
-            ii = np.full((n_queries, k), fill_value=-1, dtype=INT_TYPE)
-            nn = np.empty((n_queries,), dtype=INT_TYPE)
+        n_queries = xx.shape[0]
 
-            for i in range(n_queries):
-                func_query_knn(self.ckdtree, dd[i].ctypes, ii[i].ctypes, nn[i:i+1].ctypes,
-                               xx[i].ctypes, 1, k, eps, p, distance_upper_bound)
-            return dd, ii, nn
+        dd = np.empty((n_queries, k), dtype=dtype_npy)
+        ii = np.full((n_queries, k), fill_value=-1, dtype=INT_TYPE)
+        nn = np.empty((n_queries,), dtype=INT_TYPE)
 
-        return _query_impl
-    else:
-        def _query_parallel_impl(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf, workers=None):
-            numba_threads_prev = nb.get_num_threads()
-            if workers < 0:
-                # use all available numba threads
-                nb.set_num_threads(NUMBA_THREADS)
-            else:
-                # only the specified number of threads
-                nb.set_num_threads(int(workers))
+        for i in nb.prange(n_queries):
+            func_query_knn(self.ckdtree, dd[i].ctypes, ii[i].ctypes, nn[i:i + 1].ctypes,
+                            xx[i].ctypes, 1, k, eps, p, distance_upper_bound)
+        # restore the previous number of threads
+        nb.set_num_threads(numba_threads_prev)
+        return dd, ii, nn
 
-            n_features = self.data.shape[1]
-            xx = _convert_to_valid_input(X, n_features, dtype_npy)
-
-            n_queries = xx.shape[0]
-
-            dd = np.empty((n_queries, k), dtype=dtype_npy)
-            ii = np.full((n_queries, k), fill_value=-1, dtype=INT_TYPE)
-            nn = np.empty((n_queries,), dtype=INT_TYPE)
-
-            for i in nb.prange(n_queries):
-                func_query_knn(self.ckdtree, dd[i].ctypes, ii[i].ctypes, nn[i:i + 1].ctypes,
-                               xx[i].ctypes, 1, k, eps, p, distance_upper_bound)
-            # restore the previous number of threads
-            nb.set_num_threads(numba_threads_prev)
-            return dd, ii, nn
-
-        return _query_parallel_impl
+    return _query_parallel_impl
 
 
-@overload_method(KDTreeType, "query_radius", jit_options={"nogil": True, "debug": DEBUG, "fastmath": FASTMATH, 'parallel': True})
-def _ol_query_radius(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_length=False, workers=None):
+@overload_method(KDTreeType, "query_radius", jit_options={"nogil": True, "cache": True, "fastmath": True, 'parallel': False})
+def _ol_query_radius(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_length=False):
     # choose the appropriate methods based on the data type
     dtype = self.field_dict['data'].dtype
     if dtype == nb.types.float32:
@@ -365,90 +398,104 @@ def _ol_query_radius(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_len
 
     result_array_type = types.int64[:]
 
-    # suppress the performance warning here as the non-parallel function will be compiled with parallel=True
-    warnings.simplefilter('ignore', category=nb.errors.NumbaPerformanceWarning)
+    # noinspection PyShadowingNames
+    def _query_radius_impl(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_length=False):
+        n_features = self.data.shape[1]
+        xx = _convert_to_valid_input(X, n_features, dtype_npy)
+        n_queries = xx.shape[0]
 
-    # strangely we have to check for all cases of None here...
-    if workers is None or workers is nb.types.none or isinstance(workers, nb.types.Omitted):
-        # noinspection PyShadowingNames
-        def _query_radius_impl(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_length=False, workers=None):
-            n_features = self.data.shape[1]
-            xx = _convert_to_valid_input(X, n_features, dtype_npy)
-            n_queries = xx.shape[0]
+        # broadcast a scalar r into the appropriate shape
+        if broadcast_r:
+            r_ = np.broadcast_to(r, n_queries)
+        else:
+            r_ = _convert_to_valid_input/(r, 1, dtype_npy).squeeze()
 
-            # broadcast a scalar r into the appropriate shape
-            if broadcast_r:
-                r_ = np.broadcast_to(r, n_queries)
-            else:
-                r_ = _convert_to_valid_input/(r, 1, dtype_npy).squeeze()
+            if r_.shape != (n_queries,):
+                raise ValueError("Invalid shape for r. Must be broadcastable to the number of queries.")
 
-                if r_.shape != (n_queries,):
-                    raise ValueError("Invalid shape for r. Must be broadcastable to the number of queries.")
+        if p < 1:
+            raise ValueError("Only p-norms with 1<=p<=infinity permitted")
 
-            if p < 1:
-                raise ValueError("Only p-norms with 1<=p<=infinity permitted")
+        # prepare result list
+        results_list = nb.typed.List.empty_list(item_type=result_array_type, allocated=n_queries)
+        results_list.extend([np.empty(0, dtype=np.int64) for i in range(n_queries)])
 
-            # prepare result list
-            results_list = nb.typed.List.empty_list(item_type=result_array_type, allocated=n_queries)
-            results_list.extend([np.empty(0, dtype=np.int64) for i in range(n_queries)])
+        for i in range(n_queries):
+            result_set = func_query_knn(self.ckdtree, xx[i].ctypes, 1, r_[i], eps, p, return_length, return_sorted)
+            # copy the result set into a separate buffer owned by python
+            num_results = radius_result_set_get_size(result_set)
+            results = np.empty(num_results, dtype=np.int64)
+            radius_result_set_copy_and_free(result_set, results.ctypes)
+            results_list[i] = results
 
-            for i in range(n_queries):
-                result_set = func_query_knn(self.ckdtree, xx[i].ctypes, 1, r_[i], eps, p, return_length, return_sorted)
-                # copy the result set into a separate buffer owned by python
-                num_results = radius_result_set_get_size(result_set)
-                results = np.empty(num_results, dtype=np.int64)
-                radius_result_set_copy_and_free(result_set, results.ctypes)
-                results_list[i] = results
+        return results_list
 
-            return results_list
+    return _query_radius_impl
 
-        return _query_radius_impl
+
+@overload_method(KDTreeType, "query_radius_parallel", jit_options={"nogil": True, "cache": False, "fastmath": True, 'parallel': True})
+def _ol_query_radius_parallel(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_length=False, workers=-1):
+    # choose the appropriate methods based on the data type
+    dtype = self.field_dict['data'].dtype
+    if dtype == nb.types.float32:
+        dtype_npy = np.float32
     else:
-        # noinspection PyShadowingNames
-        def _query_radius_parallel_impl(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_length=False,
-                                        workers=None):
-            numba_threads_prev = nb.get_num_threads()
-            if workers < 0:
-                # use all available numba threads
-                nb.set_num_threads(NUMBA_THREADS)
-            else:
-                # only the specified number of threads
-                nb.set_num_threads(int(workers))
+        dtype = nb.types.float64
+        dtype_npy = np.float64
 
-            n_features = self.data.shape[1]
-            xx = _convert_to_valid_input(X, n_features, dtype_npy)
-            n_queries = xx.shape[0]
+    broadcast_r = (r != nb.types.Array)
 
-            # broadcast a scalar r into the appropriate shape
-            if broadcast_r:
-                r_ = np.broadcast_to(r, n_queries)
-            else:
-                r_ = _convert_to_valid_input/(r, 1, dtype_npy).squeeze()
-                if r_.shape != (n_queries,):
-                    raise ValueError("Invalid shape for r. Must be broadcastable to the number of queries.")
-                
-            if p < 1:
-                raise ValueError("Only p-norms with 1<=p<=infinity permitted")
+    func_query_knn = ckdtree_ct.query_radius[dtype]
+    radius_result_set_get_size = ckdtree_ct.radius_result_set_get_size
+    radius_result_set_copy_and_free = ckdtree_ct.radius_result_set_copy_and_free
 
-            # prepare result list
-            results_list = nb.typed.List.empty_list(item_type=result_array_type, allocated=n_queries)
-            results_list.extend([np.empty(0, dtype=np.int64) for i in range(n_queries)])
+    result_array_type = types.int64[:]
 
-            for i in nb.prange(n_queries):
-                result_set = func_query_knn(self.ckdtree, xx[i].ctypes, 1, r_[i], eps, p, return_length, return_sorted)
-                # copy the result set into a separate buffer owned by python
-                num_results = radius_result_set_get_size(result_set)
-                results = np.empty(num_results, dtype=np.int64)
-                radius_result_set_copy_and_free(result_set, results.ctypes)
-                results_list[i] = results
-            nb.set_num_threads(numba_threads_prev)
+    # noinspection PyShadowingNames
+    def _query_radius_parallel_impl(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_length=False,
+                                    workers=-1):
+        numba_threads_prev = nb.get_num_threads()
+        if workers < 0:
+            # use all available numba threads
+            nb.set_num_threads(NUMBA_THREADS)
+        else:
+            # only the specified number of threads
+            nb.set_num_threads(int(workers))
 
-            return results_list
+        n_features = self.data.shape[1]
+        xx = _convert_to_valid_input(X, n_features, dtype_npy)
+        n_queries = xx.shape[0]
 
-        return _query_radius_parallel_impl
+        # broadcast a scalar r into the appropriate shape
+        if broadcast_r:
+            r_ = np.broadcast_to(r, n_queries)
+        else:
+            r_ = _convert_to_valid_input/(r, 1, dtype_npy).squeeze()
+            if r_.shape != (n_queries,):
+                raise ValueError("Invalid shape for r. Must be broadcastable to the number of queries.")
+            
+        if p < 1:
+            raise ValueError("Only p-norms with 1<=p<=infinity permitted")
+
+        # prepare result list
+        results_list = nb.typed.List.empty_list(item_type=result_array_type, allocated=n_queries)
+        results_list.extend([np.empty(0, dtype=np.int64) for i in range(n_queries)])
+
+        for i in nb.prange(n_queries):
+            result_set = func_query_knn(self.ckdtree, xx[i].ctypes, 1, r_[i], eps, p, return_length, return_sorted)
+            # copy the result set into a separate buffer owned by python
+            num_results = radius_result_set_get_size(result_set)
+            results = np.empty(num_results, dtype=np.int64)
+            radius_result_set_copy_and_free(result_set, results.ctypes)
+            results_list[i] = results
+        nb.set_num_threads(numba_threads_prev)
+
+        return results_list
+
+    return _query_radius_parallel_impl
 
 
-@nb.njit(nogil=True)
+@nb.njit(nogil=True, cache=True)
 def _make_kdtree(data, root_bbox, idx, leafsize=10, balanced=False, compact=False):
     # create the transparent underlying c object by calling the function appropriate to the data dtype
     ckdtree = np.uint64(0)  # leave the c object empty for now
@@ -460,7 +507,7 @@ def _restore_kdtree_impl(tree_buffer, data, root_bbox, leafsize, indices):
     # this is a stub for numba overload
     pass
 
-@nb.extending.overload(_restore_kdtree_impl, jit_options={'nogil': True, 'fastmath': True})
+@nb.extending.overload(_restore_kdtree_impl, jit_options={'nogil': True, 'fastmath': True, "cache": True})
 def _ol_restore_kdtree_impl(tree_buffer, data, root_bbox, leafsize, indices):
     dtype = data.dtype
     if dtype == nb.types.float32:
@@ -483,11 +530,11 @@ def _ol_restore_kdtree_impl(tree_buffer, data, root_bbox, leafsize, indices):
     return _restore_kdtree_impl_impl
 
 # wrapper function to call the overloaded function above
-@nb.njit()
+@nb.njit(cache=True)
 def _restore_kdtree(tree_buffer, data, root_bbox, leafsize, indices):
     return _restore_kdtree_impl(tree_buffer, data, root_bbox, leafsize, indices)
 
-# constructor function
+# python constructor function
 def KDTree(data: DataArray, leafsize: int = 10, compact: bool = False, balanced: bool = False, root_bbox: Optional[DataArray] = None):
     if data.dtype == np.float32:
         conv_dtype = np.float32
@@ -511,8 +558,8 @@ def KDTree(data: DataArray, leafsize: int = 10, compact: bool = False, balanced:
     return kdtree
 
 
-# constructor method
-@nb.extending.overload(KDTree, jit_options={'nogil': True, 'fastmath': True})
+# numba constructor implementation
+@nb.extending.overload(KDTree, jit_options={'nogil': True, 'fastmath': True, 'cache': True})
 def KDTree_numba(data, leafsize: int = 10, compact: bool = False, balanced: bool = False, root_bbox=None):
     if data.dtype == nb.types.float32:
         conv_dtype = nb.types.float32
