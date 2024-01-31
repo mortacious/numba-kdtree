@@ -10,7 +10,7 @@ import warnings
 from typing import Optional, Any
 
 
-__all__ = ["KDTree"]
+__all__ = ["KDTree", "KDTreeType"]
 
 INT_TYPE = np.int64
 INT_TYPE_T = nb.int64
@@ -31,15 +31,6 @@ BoolArray = np.ndarray
 
 NUMBA_THREADS = nb.config.NUMBA_NUM_THREADS
 
-@intrinsic
-def address_as_void_pointer(typingctx, src):
-    """ returns a void pointer from a given memory address """
-    sig = types.voidptr(src)
-
-    def codegen(cgctx, builder, sig, args):
-        return builder.inttoptr(args[0], cgutils.voidptr_t)
-    return sig, codegen
-
 
 @nb.njit(nogil=True, inline='always', cache=True)
 def _list_to_2d_array(arraylist, dtype):
@@ -51,8 +42,13 @@ def _list_to_2d_array(arraylist, dtype):
     return array
 
 
-@nb.generated_jit(nopython=True, nogil=True, fastmath=True, cache=True)
 def _convert_to_valid_input(X, n_features, dtype):
+    # this is a stub for numba overload
+    pass
+
+
+@nb.extending.overload(_convert_to_valid_input, jit_options={'nogil': True, 'fastmath': True, "cache": True})
+def _ol_restore_kdtree_impl(X, n_features, dtype):
     convert_list_to_array = isinstance(X, (nb.types.ListType, nb.types.List)) and isinstance(X.dtype, nb.types.ArrayCompatible)
 
     def _convert_impl(X, n_features, dtype):
@@ -66,15 +62,14 @@ def _convert_to_valid_input(X, n_features, dtype):
 
 
 @structref.register
-class KDTreeType(types.StructRef):
+class KDTreeNumbaType(types.StructRef):
     def preprocess_fields(self, fields):
         # We don't want the struct to take Literal types.
         return tuple((name, types.unliteral(typ)) for name, typ in fields)
 
 
-class _KDTree(structref.StructRefProxy):
+class KDTreeType(structref.StructRefProxy):
     def __new__(cls, ckdtree, root_bbox, data, idx):
-        ckdtree = nb.types.voidptr()
         return structref.StructRefProxy.__new__(cls,
                                                 ckdtree,
                                                 root_bbox,
@@ -82,31 +77,52 @@ class _KDTree(structref.StructRefProxy):
                                                 idx)
     @property
     def root_bbox(self) -> DataArray:
+        """Returns the root bounding box of the kdtree.
+
+        Returns:
+            Numpy array of shape (2, n_features).
+        """
         return _KDTree_get_root_bbox(self)
 
     @property
     def data(self) -> DataArray:
+        """Returns the underlying data array.
+
+        Returns:
+            Numpy array of shape (n, n_features)
+        """
         return _KDTree_get_data(self)
 
     @property
     def idx(self) -> DataArray:
+        """Returns the underlying index array of all points in the data array sorted by the tree traversal order.
+
+        Returns:
+            Numpy array of shape (n,)
+        """
         return _KDTree_get_idx(self)
 
     @property
     def size(self) -> int:
+        """Returns the number of nodes in the kdtree. 
+        """
         return _KDTree_get_size(self)
     
     @property
     def leafsize(self) -> int:
+        """Returns the size of a leaf in the kdtree in bytes.
+        """
         return _KDTree_get_leafsize(self)
 
     def built(self) -> bool:
+        """Returns True, if the kdtree has been built already, False otherwise.
+        """
         return _KDTree_built(self)
 
     def __del__(self) -> None:
         try:
             self.free_index()
-        except ModuleNotFoundError:
+        except (ModuleNotFoundError, ImportError):
             # HACK: we are in the process of shutting down the interpreter so calling the external c function
             # might not be possible any more. For now just ignore this
             pass
@@ -118,6 +134,8 @@ class _KDTree(structref.StructRefProxy):
         return _restore_kdtree, args
 
     def free_index(self) -> None:
+        """free the internal index and ressources. The kdtree has to be rebuilt afterwards to be used.
+        """
         _KDTree_free(self)
 
     def query(self, 
@@ -126,6 +144,25 @@ class _KDTree(structref.StructRefProxy):
               p: float = 2.0, 
               eps: float = 0.0, 
               distance_upper_bound: float = np.inf) -> tuple[DataArray, DataArray, DataArray]:
+        """Query the k nearest neighbors of the given query points. The results are returned as 3 arrays containing the 
+        distances, indices, and number of found neighbors. As the distance and index arrays are allocated before the query, the number of
+        neighbors found has to be checked against the returned number of found neighbors. 
+        Indices and distances above the number of neighbors found are invalid.
+
+        Args:
+            X: The query points as an array of shape (n, n_features) or (n_features,).
+            k: The number of neighbors to search. Defaults to 1.
+            p: The distance metric (p-norm) to use. Defaults to 2.0 (euclidean norm).
+            eps: Optional epsilon for approximative search. Defaults to 0.0 (exact search).
+            distance_upper_bound: The upper bound of the distance between the query and the found neighbors. Defaults to np.inf.
+
+        Returns:
+            A tuple of:
+                - Numpy array of shape (n, k) containing the distances between each query point and it's k nearest neighbors.
+                - Numpy array of shape (n, k) containng the indices of the nearest neighbors for each query point.
+                - Numpy array of shape (n,) containing the number of neighbors found for each query point. 
+                  This is usually equal to k, except of the distance_upper_bound has been set.
+        """
         return _KDTree_query(self, X, k, p, eps, distance_upper_bound)
     
     def query_parallel(self, 
@@ -133,9 +170,11 @@ class _KDTree(structref.StructRefProxy):
               k: int = 1, 
               p: float = 2.0, 
               eps: float = 0.0, 
-              distance_upper_bound: float = np.inf, 
-              workers: int = -1) -> tuple[DataArray, DataArray, DataArray]:
-        return _KDTree_query_parallel(self, X, k, p, eps, distance_upper_bound, workers=workers)
+              distance_upper_bound: float = np.inf) -> tuple[DataArray, DataArray, DataArray]:
+        """Query to k nearest neighbors of the given query points using a parallel implementation with one thread per query point. 
+        See query() for details.
+        """
+        return _KDTree_query_parallel(self, X, k, p, eps, distance_upper_bound)
 
     def query_radius(self, X: DataArray, 
                      r: DataArray | float, 
@@ -143,6 +182,19 @@ class _KDTree(structref.StructRefProxy):
                      eps: float = 0.0, 
                      return_sorted: bool = False, 
                      return_length: bool = False) -> list[DataArray]:
+        """Query all neighbors within a given radius for each query point.
+
+        Args:
+            X: The query points as an array of shape (n, n_features) or (n_features,).
+            r: The search radius. If given as an array of shape (n,), a different radius will be used for each query point.
+            p: The distance metric (p-norm) to use. Defaults to 2.0 (euclidean norm).
+            eps: Optional epsilon for approximative search. Defaults to 0.0 (exact search).
+            return_sorted: Return the neighbors sorted by distance. Defaults to False.
+            return_length: Returns the number of neighbors found instead of their indices. Defaults to False.
+
+        Returns:
+            A list of numpy arrays containing either the indices of each neighbor or the number of neihbors found within the given search radius.
+        """
         return _KDTree_query_radius(self, X, r, p, eps, return_sorted, return_length)
     
     def query_radius_parallel(self, X: DataArray, 
@@ -150,13 +202,16 @@ class _KDTree(structref.StructRefProxy):
                      p: float = 2.0, 
                      eps: float = 0.0, 
                      return_sorted: bool = False, 
-                     return_length: bool = False, 
-                     workers: int = -1) -> list[DataArray]:
-        return _KDTree_query_radius_parallel(self, X, r, p, eps, return_sorted, return_length, workers=workers)
+                     return_length: bool = False) -> list[DataArray]:
+        """Query all neighbors within a given radius for each query point using a parallel implementation with one thread per query point.
+        See query_radius() for details.
+        """
+        return _KDTree_query_radius_parallel(self, X, r, p, eps, return_sorted, return_length)
 
 
-structref.define_proxy(_KDTree, KDTreeType,
+structref.define_proxy(KDTreeType, KDTreeNumbaType,
                        ["ckdtree", "root_bbox", "data", "idx"])
+
 
 # define wrapper functions for each method of the kdtree
 @nb.njit(cache=True)
@@ -178,13 +233,16 @@ def _KDTree_get_idx(self):
 def _KDTree_get_size(self):
     return self._size()
 
+
 @nb.njit(cache=True)
 def _KDTree_get_leafsize(self):
     return self._leafsize()
 
+
 @nb.njit(cache=True)
 def _KDTree_reduce_args(self):
     return self._reduce_args()
+
 
 @nb.njit(cache=True)
 def _KDTree_built(self):
@@ -200,23 +258,24 @@ def _KDTree_free(self):
 def _KDTree_query(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf):
     return self.query(X, k=k, p=p, eps=eps, distance_upper_bound=distance_upper_bound)
 
+
 @nb.njit(cache=False)
-def _KDTree_query_parallel(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf, workers=-1):
-    return self.query_parallel(X, k=k, p=p, eps=eps, distance_upper_bound=distance_upper_bound, workers=workers)
+def _KDTree_query_parallel(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf):
+    return self.query_parallel(X, k=k, p=p, eps=eps, distance_upper_bound=distance_upper_bound)
 
 
 @nb.njit(cache=True)
 def _KDTree_query_radius(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_length=False):
     return self.query_radius(X, r, p, eps, return_sorted, return_length)
 
+
 @nb.njit(cache=False)
-def _KDTree_query_radius_parallel(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_length=False, workers=-1):
-    return self.query_radius_parallel(X, r, p, eps, return_sorted, return_length, workers=workers)
+def _KDTree_query_radius_parallel(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_length=False):
+    return self.query_radius_parallel(X, r, p, eps, return_sorted, return_length)
 
 
-# function required for pickling the Kdtree
-
-@overload_method(KDTreeType, "_size", jit_options={"cache": True})
+# functions required for pickling the Kdtree
+@overload_method(KDTreeNumbaType, "_size", jit_options={"cache": True})
 def _ol_size(self):
     dtype = self.field_dict['data'].dtype
     if dtype != nb.types.float32:
@@ -230,7 +289,7 @@ def _ol_size(self):
     return _size_impl
 
 
-@overload_method(KDTreeType, "_leafsize", jit_options={"cache": True})
+@overload_method(KDTreeNumbaType, "_leafsize", jit_options={"cache": True})
 def _ol_leafsize(self):
     """Returns the leaf size of the underlying tree
     """
@@ -246,7 +305,7 @@ def _ol_leafsize(self):
     return _leafsize_impl
 
 
-@overload_method(KDTreeType, "free_index", jit_options={"cache": True})
+@overload_method(KDTreeNumbaType, "free_index", jit_options={"cache": True})
 def _ol_free_index(self):
     dtype = self.field_dict['data'].dtype
     if dtype != nb.types.float32:
@@ -259,7 +318,8 @@ def _ol_free_index(self):
 
     return _free_index_impl
 
-@overload_method(KDTreeType, "_reduce_args", jit_options={"cache": True})
+
+@overload_method(KDTreeNumbaType, "_reduce_args", jit_options={"cache": True})
 def _ol_reduce_args(self):
     dtype = self.field_dict['data'].dtype
     if dtype != nb.types.float32:
@@ -284,7 +344,7 @@ def _ol_reduce_args(self):
     return _reduce_args_impl
 
 
-@overload_method(KDTreeType, "build_index", jit_options={"nogil": True, "cache" : True, "fastmath": True})
+@overload_method(KDTreeNumbaType, "build_index", jit_options={"nogil": True, "cache" : True, "fastmath": True})
 def _ol_build_index(self, leafsize, balanced=False, compact=False):
     # choose the appropriate methods based on the data type
     dtype = self.field_dict['data'].dtype
@@ -297,9 +357,9 @@ def _ol_build_index(self, leafsize, balanced=False, compact=False):
 
     def _build_index_impl(self, leafsize, balanced=False, compact=False):
         n_data, n_features = self.data.shape
-        #if self.ckdtree != 0:
-        #    func_free(self.ckdtree)
-        self.ckdtree = func_init(address_as_void_pointer(0), 0, self.data.ctypes, self.idx.ctypes, n_data, n_features, leafsize, self.root_bbox[0].ctypes, self.root_bbox[1].ctypes)
+        if self.ckdtree != 0:
+           func_free(self.ckdtree)
+        self.ckdtree = func_init(0, 0, self.data.ctypes, self.idx.ctypes, n_data, n_features, leafsize, self.root_bbox[0].ctypes, self.root_bbox[1].ctypes)
         compact_ = 1 if compact else 0
         balanced_ = 1 if balanced else 0
         func_build(self.ckdtree, 0, n_data, self.root_bbox[0].ctypes, self.root_bbox[1].ctypes, balanced_, compact_)
@@ -307,7 +367,7 @@ def _ol_build_index(self, leafsize, balanced=False, compact=False):
     return _build_index_impl
 
 
-@overload_method(KDTreeType, "query", jit_options={"nogil": True, "cache": True, "fastmath": True, 'parallel': False})
+@overload_method(KDTreeNumbaType, "query", jit_options={"nogil": True, "cache": True, "fastmath": True, 'parallel': False})
 def _ol_query(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf):
     # choose the appropriate methods based on the data type
     dtype = self.field_dict['data'].dtype
@@ -340,8 +400,8 @@ def _ol_query(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf):
     
 
 # parallel version
-@overload_method(KDTreeType, "query_parallel", jit_options={"nogil": True, "cache": False, "fastmath": True, 'parallel': True})
-def _ol_query_parallel(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf, workers=-1):
+@overload_method(KDTreeNumbaType, "query_parallel", jit_options={"nogil": True, "cache": False, "fastmath": True, 'parallel': True})
+def _ol_query_parallel(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf):
     # choose the appropriate methods based on the data type
     dtype = self.field_dict['data'].dtype
     if dtype == nb.types.float32:
@@ -352,20 +412,14 @@ def _ol_query_parallel(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf, 
 
     func_query_knn = ckdtree_ct.query_knn[dtype]
 
-    def _query_parallel_impl(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf, workers=-1):
-        numba_threads_prev = nb.get_num_threads()
-        if workers < 0:
-            # use all available numba threads
-            nb.set_num_threads(NUMBA_THREADS)
-        else:
-            # only the specified number of threads
-            nb.set_num_threads(int(workers))
-
+    def _query_parallel_impl(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf):
         n_features = self.data.shape[1]
         xx = _convert_to_valid_input(X, n_features, dtype_npy)
-
         n_queries = xx.shape[0]
 
+        if p < 1:
+            raise ValueError("Only p-norms with 1<=p<=infinity permitted")
+        
         dd = np.empty((n_queries, k), dtype=dtype_npy)
         ii = np.full((n_queries, k), fill_value=-1, dtype=INT_TYPE)
         nn = np.empty((n_queries,), dtype=INT_TYPE)
@@ -373,14 +427,12 @@ def _ol_query_parallel(self, X, k=1, p=2, eps=0.0, distance_upper_bound=np.inf, 
         for i in nb.prange(n_queries):
             func_query_knn(self.ckdtree, dd[i].ctypes, ii[i].ctypes, nn[i:i + 1].ctypes,
                             xx[i].ctypes, 1, k, eps, p, distance_upper_bound)
-        # restore the previous number of threads
-        nb.set_num_threads(numba_threads_prev)
         return dd, ii, nn
 
     return _query_parallel_impl
 
 
-@overload_method(KDTreeType, "query_radius", jit_options={"nogil": True, "cache": True, "fastmath": True, 'parallel': False})
+@overload_method(KDTreeNumbaType, "query_radius", jit_options={"nogil": True, "cache": True, "fastmath": True, 'parallel': False})
 def _ol_query_radius(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_length=False):
     # choose the appropriate methods based on the data type
     dtype = self.field_dict['data'].dtype
@@ -433,8 +485,8 @@ def _ol_query_radius(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_len
     return _query_radius_impl
 
 
-@overload_method(KDTreeType, "query_radius_parallel", jit_options={"nogil": True, "cache": False, "fastmath": True, 'parallel': True})
-def _ol_query_radius_parallel(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_length=False, workers=-1):
+@overload_method(KDTreeNumbaType, "query_radius_parallel", jit_options={"nogil": True, "cache": False, "fastmath": True, 'parallel': True})
+def _ol_query_radius_parallel(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_length=False):
     # choose the appropriate methods based on the data type
     dtype = self.field_dict['data'].dtype
     if dtype == nb.types.float32:
@@ -452,16 +504,7 @@ def _ol_query_radius_parallel(self, X, r, p=2.0, eps=0.0, return_sorted=False, r
     result_array_type = types.int64[:]
 
     # noinspection PyShadowingNames
-    def _query_radius_parallel_impl(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_length=False,
-                                    workers=-1):
-        numba_threads_prev = nb.get_num_threads()
-        if workers < 0:
-            # use all available numba threads
-            nb.set_num_threads(NUMBA_THREADS)
-        else:
-            # only the specified number of threads
-            nb.set_num_threads(int(workers))
-
+    def _query_radius_parallel_impl(self, X, r, p=2.0, eps=0.0, return_sorted=False, return_length=False):
         n_features = self.data.shape[1]
         xx = _convert_to_valid_input(X, n_features, dtype_npy)
         n_queries = xx.shape[0]
@@ -488,7 +531,6 @@ def _ol_query_radius_parallel(self, X, r, p=2.0, eps=0.0, return_sorted=False, r
             results = np.empty(num_results, dtype=np.int64)
             radius_result_set_copy_and_free(result_set, results.ctypes)
             results_list[i] = results
-        nb.set_num_threads(numba_threads_prev)
 
         return results_list
 
@@ -496,16 +538,18 @@ def _ol_query_radius_parallel(self, X, r, p=2.0, eps=0.0, return_sorted=False, r
 
 
 @nb.njit(nogil=True, cache=True)
-def _make_kdtree(data, root_bbox, idx, leafsize=10, balanced=False, compact=False):
+def _make_kdtree(data, root_bbox, idx, leafsize=10, balanced=False, compact=False) -> KDTreeNumbaType:
     # create the transparent underlying c object by calling the function appropriate to the data dtype
     ckdtree = np.uint64(0)  # leave the c object empty for now
-    kdtree = _KDTree(ckdtree, root_bbox, data, idx)
+    kdtree = KDTreeType(ckdtree, root_bbox, data, idx)
     kdtree.build_index(leafsize, balanced, compact)
     return kdtree
+
 
 def _restore_kdtree_impl(tree_buffer, data, root_bbox, leafsize, indices):
     # this is a stub for numba overload
     pass
+
 
 @nb.extending.overload(_restore_kdtree_impl, jit_options={'nogil': True, 'fastmath': True, "cache": True})
 def _ol_restore_kdtree_impl(tree_buffer, data, root_bbox, leafsize, indices):
@@ -522,20 +566,48 @@ def _ol_restore_kdtree_impl(tree_buffer, data, root_bbox, leafsize, indices):
         data_conv = data.astype(dtype_npy) # is this really needed?
         n_data, n_features = data.shape
         ckdtree = np.uint64(0)  # leave the c object empty for now
-        kdtree = _KDTree(ckdtree, root_bbox, data_conv, indices)
+        kdtree = KDTreeType(ckdtree, root_bbox, data_conv, indices)
         # call init with the existing tree
         kdtree.ckdtree = func_init(tree_buffer.ctypes, tree_buffer.size, data_conv.ctypes, indices.ctypes, n_data, n_features, leafsize, root_bbox[0].ctypes, root_bbox[1].ctypes)
         return kdtree
 
     return _restore_kdtree_impl_impl
 
+
 # wrapper function to call the overloaded function above
 @nb.njit(cache=True)
 def _restore_kdtree(tree_buffer, data, root_bbox, leafsize, indices):
     return _restore_kdtree_impl(tree_buffer, data, root_bbox, leafsize, indices)
 
+
 # python constructor function
-def KDTree(data: DataArray, leafsize: int = 10, compact: bool = False, balanced: bool = False, root_bbox: Optional[DataArray] = None):
+def KDTree(data: DataArray, leafsize: int = 10, compact: bool = False, balanced: bool = False, root_bbox: Optional[DataArray] = None) -> KDTreeType:
+    """
+    Represents a KDTree usable from python as well as within numba functions. The tree is represented by the custom structref KDTreeType and 
+    can be freely constructed and passed between numba and regular python code. 
+    The underlying implementation uses a modified version of the ckdtree 
+    available in the scipy package (https://docs.scipy.org/doc/scipy/reference/generated/scipy.spatial.cKDTree.html) 
+    and is comparable regarding performance and results.
+    The data array stored by reference if possible, so no additional copy will be made. The user has to ensure, 
+    that the data is not modified during the lifetime of the tree to avoid corruption.
+
+    The resulting KDTree is fully pickable and can be passed between processes and stored on disk. The data array will be serialized with the tree in that case.
+
+    Args:
+        data: The data to build the tree from as an array of shape (n, n_features). This array is not copied into the tree but stored by reference so it must 
+              not be modified during the lifetime of the tree.
+        leafsize: The maximum number of points in the leafs of the tree. Larger values result in a smaller tree but higher search time. Defaults to 10.
+        compact: If True, the KDTree is built to shrink the hyperrectangles to the actual data range. 
+                 This usually gives a more compact tree that is robust against degenerated input data and 
+                 gives faster queries at the expense of longer build time. Defaults to False.
+        balanced: If True, the median is used to split the hyperrectangles instead of the midpoint. 
+                  This usually gives a more compact tree and faster queries at the expense of longer build time.
+                  Defaults to False.
+        root_bbox: Initial bounding box to use for the root. If None (default), the bounds will be determined from the data array before building the tree.
+
+    Returns:
+        The python proxy objects containing the KDTree.
+    """
     if data.dtype == np.float32:
         conv_dtype = np.float32
     else:
@@ -599,4 +671,3 @@ def KDTree_numba(data, leafsize: int = 10, compact: bool = False, balanced: bool
         return kdtree
 
     return KDTree_impl
-
