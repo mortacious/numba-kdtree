@@ -189,7 +189,7 @@ class KDTreeType(structref.StructRefProxy):
             r: The search radius. If given as an array of shape (n,), a different radius will be used for each query point.
             p: The distance metric (p-norm) to use. Defaults to 2.0 (euclidean norm).
             eps: Optional epsilon for approximative search. Defaults to 0.0 (exact search).
-            return_sorted: Return the neighbors sorted by distance. Defaults to False.
+            return_sorted: Return the neighbors sorted by their index. Defaults to False.
             return_length: Returns the number of neighbors found instead of their indices. Defaults to False.
 
         Returns:
