@@ -4,7 +4,6 @@
 
 #include <cstdlib>
 #include <cstring>
-#include <iostream>
 #include <vector>
 
 #include "ckdtree_decl.h"
@@ -196,12 +195,9 @@ int ckdtree_build_float(ckdtree_float* self, ckdtree_intp_t start_idx, ckdtree_i
     if (!self) {
         return 1;
     }
-    std::cout << "building float" << std::endl;
-
     //auto self = (ckdtree<float>*) self_; // cast the void pointer
     build<float>(self, start_idx, end_idx, mins, maxes, _balanced, _compact);
     self->size = self->tree_buffer.size();
-    std::cout << "built " << self->size << std::endl;
     return 0;
 }
 
@@ -210,13 +206,9 @@ int ckdtree_build_double(ckdtree_double* self, ckdtree_intp_t start_idx, ckdtree
     if (!self) {
         return 1;
     }
-    std::cout << "building double" << std::endl;
-
     //auto self = (ckdtree<double>*) self_; // cast the void pointer
     build<double>(self, start_idx, end_idx, mins, maxes, _balanced, _compact);
     self->size = self->tree_buffer.size();
-    std::cout << "built " << self->size << std::endl;
-
 
     return 0;
 }
