@@ -44,6 +44,29 @@ def _list_to_2d_array(arraylist, dtype):
         array[i] = arraylist[i]
     return array
 
+# code adapted from https://github.com/numba/numba/issues/1269#issuecomment-472574352
+@nb.njit(nogil=True, inline='always', fastmath=True, cache=True)
+def _np_apply_along_axis(func1d, axis, arr):
+  assert arr.ndim == 2
+  assert axis in [0, 1]
+  if axis == 0:
+    result = np.empty(arr.shape[1], dtype=arr.dtype)
+    for i in range(len(result)):
+      result[i] = func1d(arr[:, i])
+  else:
+    result = np.empty(arr.shape[0], dtype=arr.dtype)
+    for i in range(len(result)):
+      result[i] = func1d(arr[i, :])
+  return result
+
+@nb.njit(nogil=True, fastmath=True, cache=True, inline='always')
+def _np_min(array, axis):
+  return _np_apply_along_axis(np.amin, axis, array)
+
+@nb.njit(nogil=True, fastmath=True, cache=True, inline='always')
+def _np_max(array, axis):
+  return _np_apply_along_axis(np.amin, axis, array)
+
 
 def _convert_to_valid_input(X, n_features, dtype):
     # this is a stub for numba overload
@@ -629,8 +652,8 @@ def KDTree_numba(data, leafsize: int = 10, compact: bool = False, balanced: bool
         conv_dtype = nb.types.float64
         finfo = np.finfo(np.float64)
 
-    cmax = finfo.max
-    cmin = finfo.min
+    #cmax = finfo.max
+    #cmin = finfo.min
 
     def KDTree_impl(data, leafsize=10, compact=False, balanced=False, root_bbox=None):
         data = np.ascontiguousarray(data).astype(conv_dtype)
@@ -638,16 +661,19 @@ def KDTree_numba(data, leafsize: int = 10, compact: bool = False, balanced: bool
 
         if root_bbox is None:
             # compute the bounding box
-            root_bbox_ = np.empty((2, n_features), dtype=data.dtype)
-            root_bbox_[0] = cmax
-            root_bbox_[1] = cmin
+            mins = _np_min(data, 0) if n_data > 0 else np.zeros(n_features, dtype=conv_dtype)
+            maxes = _np_max(data, 0) if n_data > 0 else np.zeros(n_features, dtype=conv_dtype)
+            root_bbox_ = np.vstack((mins, maxes))
+            # root_bbox_ = np.empty((2, n_features), dtype=data.dtype)
+            # root_bbox_[0] = cmax
+            # root_bbox_[1] = cmin
 
-            for i in range(n_data):
-                for j in range(n_features):
-                    if data[i, j] < root_bbox_[0, j]:
-                        root_bbox_[0, j] = data[i, j]
-                    if data[i, j] > root_bbox_[1, j]:
-                        root_bbox_[1, j] = data[i, j]
+            # for i in range(n_data):
+            #     for j in range(n_features):
+            #         if data[i, j] < root_bbox_[0, j]:
+            #             root_bbox_[0, j] = data[i, j]
+            #         if data[i, j] > root_bbox_[1, j]:
+            #             root_bbox_[1, j] = data[i, j]
         else:
             root_bbox_ = root_bbox
         root_bbox__ = np.ascontiguousarray(root_bbox_).astype(conv_dtype)
