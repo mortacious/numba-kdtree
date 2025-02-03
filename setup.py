@@ -4,6 +4,7 @@ from distutils.sysconfig import get_python_inc
 from os.path import join, dirname
 from distutils.sysconfig import customize_compiler
 import platform
+import numba.extending as nbe
 
 # standalone import of a module (https://stackoverflow.com/a/58423785)
 def import_module_from_path(path):
@@ -25,13 +26,14 @@ def import_module_from_path(path):
         module = sys.modules
     return module
 
-inc_dirs = [get_python_inc()]
+inc_dirs = [get_python_inc(), nbe.include_path()]
 inc_dirs.append(join(dirname(dirname(__file__)), 'src', 'ckdtree'))
 
 ckdtree_src = ['init.cpp',
                'build.cpp',
                'query.cpp',
-               'query_radius.cpp']
+               'query_radius.cpp'
+               ]
 
 ckdtree_src = [join('src', 'ckdtree', x) for x in ckdtree_src]
 
@@ -70,7 +72,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 if platform.system() == "Windows":
     extra_compile_args = ['/O2', '/DKDTREE_COMPILING=1']
 else:
-    extra_compile_args = ['-fPIC', '-shared', '-O3', '-DKDTREE_COMPILING=1']
+    extra_compile_args = ['-fPIC', '-shared', '-g', '-DKDTREE_COMPILING=1']
     if platform.system() == "Darwin":
         extra_compile_args.append('-std=c++11')
 

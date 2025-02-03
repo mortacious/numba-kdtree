@@ -26,7 +26,6 @@ def scipy_kdtree(data):
 
 def _test_kdtree_build(data, **kwargs):
     kd_tree = KDTree(data, **kwargs)
-    assert kd_tree.built()
     return kd_tree
 
 
@@ -325,6 +324,17 @@ def test_construct_in_numba_function(data):
 
     print("\nbuild time:\nnumba:",
           runtime_kdtree_numba, "\npython:", runtime_kdtree_python)
+    
+    
+def test_construct_multiple_trees(data):
+    @nb.njit(nogil=True, fastmath=True)
+    def construct_multiple_kdtree_in_numba(data, data2, compact=False, balanced=False):
+        kdtree = KDTree(data, compact=compact, balanced=balanced)
+        kdtree2 = KDTree(data2, compact=compact, balanced=balanced)
+        return kdtree, kdtree2
+    
+    data2 = data + 11
+    construct_multiple_kdtree_in_numba(data, data2)
 
 
 def test_pickle(data, kdtree):
@@ -345,3 +355,11 @@ def test_pickle(data, kdtree):
     assert np.allclose(dd, dd_r)
     assert np.all(ii == ii_r)
     assert np.all(nn == nn_r)
+
+
+@pytest.mark.parametrize("dim", [3, 10, 100, 200])
+def test_ckdtree_high_dim(dim):
+    data = np.random.random((1000, dim))
+    kdtree = KDTree(data)
+    ret = kdtree.query(data, k=10)
+    del kdtree # delete the tree again

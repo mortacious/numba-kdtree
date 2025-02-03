@@ -159,8 +159,8 @@ build(ckdtree<T>* self, ckdtree_intp_t start_idx, ckdtree_intp_t end_idx,
         }
 
         if (CKDTREE_LIKELY(_compact)) {
-            _less = build(self, start_idx, p, maxes, mins, _median, _compact);
-            _greater = build(self, p, end_idx, maxes, mins, _median, _compact);
+            _less = build<T>(self, start_idx, p, maxes, mins, _median, _compact);
+            _greater = build<T>(self, p, end_idx, maxes, mins, _median, _compact);
         }
         else
         {
@@ -169,11 +169,11 @@ build(ckdtree<T>* self, ckdtree_intp_t start_idx, ckdtree_intp_t end_idx,
 
             for (i=0; i<m; ++i) mids[i] = maxes[i];
             mids[d] = split;
-            _less = build(self, start_idx, p, mins, mids, _median, _compact);
+            _less = build<T>(self, start_idx, p, mins, mids, _median, _compact);
 
             for (i=0; i<m; ++i) mids[i] = mins[i];
             mids[d] = split;
-            _greater = build(self, p, end_idx, mids, maxes,  _median, _compact);
+            _greater = build<T>(self, p, end_idx, mids, maxes,  _median, _compact);
         }
 
         /* recompute n because std::vector can
@@ -185,7 +185,6 @@ build(ckdtree<T>* self, ckdtree_intp_t start_idx, ckdtree_intp_t end_idx,
         n->_greater = _greater;
         n->split_dim = d;
         n->split = split;
-
         return node_index;
     }
 }
@@ -197,9 +196,12 @@ int ckdtree_build_float(ckdtree_float* self, ckdtree_intp_t start_idx, ckdtree_i
     if (!self) {
         return 1;
     }
+    std::cout << "building float" << std::endl;
+
     //auto self = (ckdtree<float>*) self_; // cast the void pointer
     build<float>(self, start_idx, end_idx, mins, maxes, _balanced, _compact);
     self->size = self->tree_buffer.size();
+    std::cout << "built " << self->size << std::endl;
     return 0;
 }
 
@@ -208,9 +210,13 @@ int ckdtree_build_double(ckdtree_double* self, ckdtree_intp_t start_idx, ckdtree
     if (!self) {
         return 1;
     }
+    std::cout << "building double" << std::endl;
+
     //auto self = (ckdtree<double>*) self_; // cast the void pointer
     build<double>(self, start_idx, end_idx, mins, maxes, _balanced, _compact);
     self->size = self->tree_buffer.size();
+    std::cout << "built " << self->size << std::endl;
+
 
     return 0;
 }
