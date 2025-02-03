@@ -5,3 +5,4 @@ __pycache__/
 *.so
 
 _version.py
+test_data/
