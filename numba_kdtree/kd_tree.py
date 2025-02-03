@@ -8,7 +8,10 @@ from numba.extending import overload_method, intrinsic
 from .ckdtree import ckdtree as ckdtree_ct
 import warnings
 from typing import Optional, Any
-
+from numba.core.unsafe.nrt import NRT_get_api
+from numba.core.runtime import nrt
+from numba.core.registry import cpu_target # Get the CPU target singleton
+cpu_target.target_context # Access the target_context property to initialize
 
 __all__ = ["KDTree", "KDTreeType"]
 
@@ -48,7 +51,7 @@ def _convert_to_valid_input(X, n_features, dtype):
 
 
 @nb.extending.overload(_convert_to_valid_input, jit_options={'nogil': True, 'fastmath': True, "cache": True})
-def _ol_restore_kdtree_impl(X, n_features, dtype):
+def _ol_convert_to_valid_input_impl(X, n_features, dtype):
     convert_list_to_array = isinstance(X, (nb.types.ListType, nb.types.List)) and isinstance(X.dtype, nb.types.ArrayCompatible)
 
     def _convert_impl(X, n_features, dtype):
@@ -61,17 +64,29 @@ def _ol_restore_kdtree_impl(X, n_features, dtype):
     return _convert_impl
 
 
+_meminfo_treeptr = types.MemInfoPointer(types.voidptr)
+
+
 @structref.register
 class KDTreeNumbaType(types.StructRef):
+    def __init__(self, fields):
+        fields = list(fields)
+        # create fields for the nrt meminfo and the pointer to the c struct as well but hide them from the constructor as they are statically typed
+        static_fields = [
+            ("meminfo", _meminfo_treeptr),
+            ("ckdtree", types.voidptr)
+        ]
+        fields = static_fields + fields
+        super().__init__(fields)
+
     def preprocess_fields(self, fields):
         # We don't want the struct to take Literal types.
-        return tuple((name, types.unliteral(typ)) for name, typ in fields)
+        return [(name, types.unliteral(typ)) for name, typ in fields] 
 
 
 class KDTreeType(structref.StructRefProxy):
-    def __new__(cls, ckdtree, root_bbox, data, idx):
+    def __new__(cls, root_bbox, data, idx):
         return structref.StructRefProxy.__new__(cls,
-                                                ckdtree,
                                                 root_bbox,
                                                 data,
                                                 idx)
@@ -114,29 +129,11 @@ class KDTreeType(structref.StructRefProxy):
         """
         return _KDTree_get_leafsize(self)
 
-    def built(self) -> bool:
-        """Returns True, if the kdtree has been built already, False otherwise.
-        """
-        return _KDTree_built(self)
-
-    def __del__(self) -> None:
-        try:
-            self.free_index()
-        except (ModuleNotFoundError, ImportError):
-            # HACK: we are in the process of shutting down the interpreter so calling the external c function
-            # might not be possible any more. For now just ignore this
-            pass
-
     def __reduce__(self) -> Any:
         """Pickle support
         """
         args = _KDTree_reduce_args(self)
         return _restore_kdtree, args
-
-    def free_index(self) -> None:
-        """free the internal index and ressources. The kdtree has to be rebuilt afterwards to be used.
-        """
-        _KDTree_free(self)
 
     def query(self, 
               X: DataArray, 
@@ -210,7 +207,7 @@ class KDTreeType(structref.StructRefProxy):
 
 
 structref.define_proxy(KDTreeType, KDTreeNumbaType,
-                       ["ckdtree", "root_bbox", "data", "idx"])
+                       ["root_bbox", "data", "idx"])
 
 
 # define wrapper functions for each method of the kdtree
@@ -242,16 +239,6 @@ def _KDTree_get_leafsize(self):
 @nb.njit(cache=True)
 def _KDTree_reduce_args(self):
     return self._reduce_args()
-
-
-@nb.njit(cache=True)
-def _KDTree_built(self):
-    return self.ckdtree != 0
-
-
-@nb.njit(cache=True)
-def _KDTree_free(self):
-    self.free_index()
 
 
 @nb.njit(cache=True)
@@ -305,20 +292,6 @@ def _ol_leafsize(self):
     return _leafsize_impl
 
 
-@overload_method(KDTreeNumbaType, "free_index", jit_options={"cache": True})
-def _ol_free_index(self):
-    dtype = self.field_dict['data'].dtype
-    if dtype != nb.types.float32:
-        dtype = nb.types.float64
-    func_free = ckdtree_ct.free[dtype]
-
-    def _free_index_impl(self):
-        func_free(self.ckdtree)
-        self.ckdtree = 0
-
-    return _free_index_impl
-
-
 @overload_method(KDTreeNumbaType, "_reduce_args", jit_options={"cache": True})
 def _ol_reduce_args(self):
     dtype = self.field_dict['data'].dtype
@@ -344,6 +317,18 @@ def _ol_reduce_args(self):
     return _reduce_args_impl
 
 
+@intrinsic
+def _meminfo_getdata(typingctx, meminfo):
+    def codegen(context, builder, signature, args):
+        meminfo = args[0]
+        data_pointer = context.nrt.meminfo_data(builder, meminfo)
+        #data_pointer = builder.bitcast(data_pointer, types.voidptr)
+        return data_pointer
+
+    sig = types.voidptr(meminfo)
+    return sig, codegen
+
+
 @overload_method(KDTreeNumbaType, "build_index", jit_options={"nogil": True, "cache" : True, "fastmath": True})
 def _ol_build_index(self, leafsize, balanced=False, compact=False):
     # choose the appropriate methods based on the data type
@@ -353,13 +338,12 @@ def _ol_build_index(self, leafsize, balanced=False, compact=False):
 
     func_init = ckdtree_ct.init[dtype]
     func_build = ckdtree_ct.build[dtype]
-    func_free = ckdtree_ct.free[dtype]
 
     def _build_index_impl(self, leafsize, balanced=False, compact=False):
         n_data, n_features = self.data.shape
-        if self.ckdtree != 0:
-           func_free(self.ckdtree)
-        self.ckdtree = func_init(0, 0, self.data.ctypes, self.idx.ctypes, n_data, n_features, leafsize, self.root_bbox[0].ctypes, self.root_bbox[1].ctypes)
+        nrt = NRT_get_api() # get the nrt API as a voidptr
+        self.meminfo = func_init(nrt, 0, 0, self.data.ctypes, self.idx.ctypes, n_data, n_features, leafsize, self.root_bbox[0].ctypes, self.root_bbox[1].ctypes)
+        self.ckdtree = _meminfo_getdata(self.meminfo) # get the handle to the actual c struct from the meminfo pointer
         compact_ = 1 if compact else 0
         balanced_ = 1 if balanced else 0
         func_build(self.ckdtree, 0, n_data, self.root_bbox[0].ctypes, self.root_bbox[1].ctypes, balanced_, compact_)
@@ -537,11 +521,13 @@ def _ol_query_radius_parallel(self, X, r, p=2.0, eps=0.0, return_sorted=False, r
     return _query_radius_parallel_impl
 
 
+
+
+
 @nb.njit(nogil=True, cache=True)
 def _make_kdtree(data, root_bbox, idx, leafsize=10, balanced=False, compact=False) -> KDTreeNumbaType:
     # create the transparent underlying c object by calling the function appropriate to the data dtype
-    ckdtree = np.uint64(0)  # leave the c object empty for now
-    kdtree = KDTreeType(ckdtree, root_bbox, data, idx)
+    kdtree = KDTreeType(root_bbox, data, idx)
     kdtree.build_index(leafsize, balanced, compact)
     return kdtree
 
@@ -565,10 +551,12 @@ def _ol_restore_kdtree_impl(tree_buffer, data, root_bbox, leafsize, indices):
     def _restore_kdtree_impl_impl(tree_buffer, data, root_bbox, leafsize, indices):
         data_conv = data.astype(dtype_npy) # is this really needed?
         n_data, n_features = data.shape
-        ckdtree = np.uint64(0)  # leave the c object empty for now
-        kdtree = KDTreeType(ckdtree, root_bbox, data_conv, indices)
+        kdtree = KDTreeType(root_bbox, data_conv, indices)
+        nrt = NRT_get_api() # get the nrt API as a voidptr
+        
         # call init with the existing tree
-        kdtree.ckdtree = func_init(tree_buffer.ctypes, tree_buffer.size, data_conv.ctypes, indices.ctypes, n_data, n_features, leafsize, root_bbox[0].ctypes, root_bbox[1].ctypes)
+        kdtree.meminfo = func_init(nrt, tree_buffer.ctypes, tree_buffer.size, data_conv.ctypes, indices.ctypes, n_data, n_features, leafsize, root_bbox[0].ctypes, root_bbox[1].ctypes)
+        kdtree.ckdtree = _meminfo_getdata(kdtree.meminfo) # get the handle to the actual c struct from the meminfo pointer
         return kdtree
 
     return _restore_kdtree_impl_impl
@@ -650,12 +638,12 @@ def KDTree_numba(data, leafsize: int = 10, compact: bool = False, balanced: bool
 
         if root_bbox is None:
             # compute the bounding box
-            root_bbox_ = np.empty((2, 3), dtype=data.dtype)
+            root_bbox_ = np.empty((2, n_features), dtype=data.dtype)
             root_bbox_[0] = cmax
             root_bbox_[1] = cmin
 
-            for i in range(data.shape[0]):
-                for j in range(data.shape[1]):
+            for i in range(n_data):
+                for j in range(n_features):
                     if data[i, j] < root_bbox_[0, j]:
                         root_bbox_[0, j] = data[i, j]
                     if data[i, j] > root_bbox_[1, j]:
@@ -663,6 +651,7 @@ def KDTree_numba(data, leafsize: int = 10, compact: bool = False, balanced: bool
         else:
             root_bbox_ = root_bbox
         root_bbox__ = np.ascontiguousarray(root_bbox_).astype(conv_dtype)
+
 
         idx = np.arange(n_data, dtype=INT_TYPE)
 

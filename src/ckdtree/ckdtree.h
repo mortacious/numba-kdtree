@@ -31,24 +31,20 @@ extern "C"
 #endif
 
 #include "ckdtree_decl.h"
-
+typedef struct MemInfo NRT_MemInfo;
 typedef struct ckdtree<float> ckdtree_float;
 typedef struct ckdtree<double> ckdtree_double;
 
 /* Init and Free methods in C */
-KDTREE_PUBLIC ckdtree_float* ckdtree_init_float(char* tree_buffer, ckdtree_intp_t buffer_size, 
+KDTREE_PUBLIC NRT_MemInfo* ckdtree_init_float(void* nrt, char* tree_buffer, ckdtree_intp_t buffer_size, 
                                   float* data, ckdtree_intp_t* indices, 
                                   ckdtree_intp_t n, ckdtree_intp_t m,
                                   ckdtree_intp_t leafsize, float *mins, float *maxes);
 
-KDTREE_PUBLIC ckdtree_double* ckdtree_init_double(char* tree_buffer, ckdtree_intp_t buffer_size, 
+KDTREE_PUBLIC NRT_MemInfo* ckdtree_init_double(void* nrt, char* tree_buffer, ckdtree_intp_t buffer_size, 
                                     double* data, ckdtree_intp_t* indices, 
                                     ckdtree_intp_t n, ckdtree_intp_t m,
                                     ckdtree_intp_t leafsize, double *mins, double *maxes);
-
-KDTREE_PUBLIC void ckdtree_free_float(ckdtree_float* self);
-
-KDTREE_PUBLIC void ckdtree_free_double(ckdtree_double* self);
 
 /* Build methods in C */
 KDTREE_PUBLIC int

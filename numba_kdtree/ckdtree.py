@@ -24,7 +24,8 @@ ckdtree = CKDTreeFunctions
 float_ptr = types.CPointer(types.float32)
 double_ptr = types.CPointer(types.double)
 ssize_t_ptr = types.CPointer(types.ssize_t)
-ckdtree_handle = types.size_t
+ckdtree_handle = types.voidptr
+meminfo_handle = types.MemInfoPointer(types.voidptr)
 
 try:
     binding.load_library_permanently(str(library_path / library_name))
@@ -49,11 +50,12 @@ ckdtree.copy_tree = {}
 
 
 for numba_type, (c_type, ptr_type) in _supported_types.items():
-    ckdtree.init[numba_type] = types.ExternalFunction(f"ckdtree_init_{c_type}", ckdtree_handle(
-        types.voidptr,
-        types.ssize_t,
-        ptr_type,
-        ssize_t_ptr,
+    ckdtree.init[numba_type] = types.ExternalFunction(f"ckdtree_init_{c_type}", meminfo_handle(
+        types.voidptr, #nrt
+        types.voidptr, # preexisting tree buffer
+        types.ssize_t, # tree buffer size
+        ptr_type, # data pointer
+        ssize_t_ptr, # size of data
         types.ssize_t,
         types.ssize_t,
         types.ssize_t,
@@ -61,9 +63,9 @@ for numba_type, (c_type, ptr_type) in _supported_types.items():
         ptr_type
     ))
 
-    ckdtree.free[numba_type] = types.ExternalFunction(f"ckdtree_free_{c_type}", types.void(
-        ckdtree_handle
-    ))
+    # ckdtree.free[numba_type] = types.ExternalFunction(f"ckdtree_free_{c_type}", types.void(
+    #     ckdtree_handle
+    # ))
 
     ckdtree.build[numba_type] = types.ExternalFunction(f"ckdtree_build_{c_type}", types.int32(
         ckdtree_handle,
