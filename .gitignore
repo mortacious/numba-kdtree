@@ -6,3 +6,5 @@ __pycache__/
 
 _version.py
 test_data/
+build/
+dist/

@@ -1,3 +1,52 @@
 [build-system]
-requires = ["setuptools", "wheel", "setuptools_scm>=6.2", "numba>=0.52"]
+requires = ["setuptools>=61", "setuptools_scm>=6.2", "numba>=0.52"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "numba-kdtree"
+authors = [
+    {name = "Felix Igelbrink", email = "felix.igelbrink@dfki.de"},
+]
+description = 'A kdtree implementation for numba.'
+readme = "README.md"
+requires-python = ">= 3.9"
+keywords = []
+license = {text = "MIT"}
+classifiers = [
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development",
+]
+dependencies = [
+    'numba>=0.52'
+]
+
+dynamic = ["version"]
+
+[project.optional-dependencies]
+test = ['pytest', 'scipy', 'requests', 'plyfile']
+
+[project.urls]
+Homepage = "https://github.com/mortacious/numba-kdtree"
+Issues = "https://github.com/mortacious/numba-kdtree/issues"
+
+[tool.setuptools]
+license-files = ["../LICENSE"]
+
+[tool.setuptools_scm]
+write_to = "numba_kdtree/_version.py"
+version_scheme = "release-branch-semver"
+
+[tool.setuptools.packages.find]
+include = [
+    'numba_kdtree'
+]
